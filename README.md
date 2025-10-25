@@ -43,3 +43,48 @@ To run
         python3 run.py --source=0 --frame-rate=25
 
 
+
+---
+
+## FastAPI API Usage
+
+This project also includes a FastAPI server to get heart rate from an uploaded video file.
+
+### 1. Installation
+
+First, install the required dependencies, including the new ones for the API:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Running the API Server
+
+To start the API server, run the following command:
+
+```bash
+uvicorn main_api:app --reload
+```
+
+The server will be available at `http://127.0.0.1:8000`.
+
+### 3. Sending a Request
+
+You can get a heart rate estimation by sending a `POST` request with a video file to the `/predict/` endpoint.
+
+Here is an example using `curl`:
+
+```bash
+curl -X POST -F "file=@/path/to/your/video.mp4" http://127.0.0.1:8000/predict/
+```
+
+Replace `/path/to/your/video.mp4` with the actual path to your video file.
+
+The API will return a JSON response with the calculated heart rate:
+
+```json
+{
+  "heart_rate": 75.5,
+  "units": "bpm"
+}
+```

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rPPG 心率检测</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; background: #f4f4f9; color: #333; }
+        h1, h2 { text-align: center; color: #4a4a4a; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 2em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        .tab-container { display: flex; justify-content: center; margin-bottom: 1.5em; }
+        .tab { padding: 10px 20px; cursor: pointer; border-bottom: 3px solid transparent; }
+        .tab.active { border-bottom: 3px solid #007bff; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .upload-section, .webcam-section { text-align: center; padding: 1em 0; }
+        #webcam-wrapper { position: relative; display: inline-block; margin: 1em 0; }
+        #webcam-video, #overlay-canvas { border-radius: 8px; }
+        #overlay-canvas { position: absolute; top: 0; left: 0; }
+        #status, #result { margin-top: 1em; font-size: 1.2em; font-weight: bold; text-align: center; padding: 1em; border-radius: 5px; }
+        #result { background: #e7f3ff; color: #007bff; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 20px auto; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; margin: 0.5em; }
+        button:disabled { background-color: #cccccc; }
+        input[type="file"] { margin: 1em 0; }
+    </style>
+    <!-- Load face-api.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <h1>rPPG 远程心率检测</h1>
+
+        <div class="tab-container">
+            <div class="tab active" data-panel="upload">上传视频</div>
+            <div class="tab" data-panel="webcam">摄像头录制</div>
+        </div>
+
+        <!-- Upload Panel -->
+        <div id="upload-panel" class="panel active">
+            <div class="upload-section">
+                <h2>上传本地视频文件</h2>
+                <input type="file" id="video-file-input" accept="video/*">
+                <br>
+                <button id="upload-button">上传并分析</button>
+            </div>
+        </div>
+
+        <!-- Webcam Panel -->
+        <div id="webcam-panel" class="panel">
+            <div class="webcam-section">
+                <h2>通过摄像头录制30秒</h2>
+                <div id="webcam-wrapper">
+                    <video id="webcam-video" width="640" height="480" autoplay muted></video>
+                    <canvas id="overlay-canvas"></canvas>
+                </div>
+                <br>
+                <button id="record-button">开始录制</button>
+            </div>
+        </div>
+
+        <div id="status"></div>
+        <div class="loader" id="loader"></div>
+        <div id="result"></div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const allowWebcamFeature = {{ allow_webcam | tojson }};
+
+        const videoFileInput = document.getElementById('video-file-input');
+        const uploadButton = document.getElementById('upload-button');
+        const recordButton = document.getElementById('record-button');
+        const webcamVideo = document.getElementById('webcam-video');
+        const overlayCanvas = document.getElementById('overlay-canvas');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const loader = document.getElementById('loader');
+        
+        let mediaRecorder;
+        let recordedChunks = [];
+        let faceApiLoaded = false;
+        let faceDetected = false;
+        let faceDetectionInterval;
+
+        // --- Tab logic ---
+        function showPanel(panelId) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            const activeTab = document.querySelector(`.tab[data-panel="${panelId}"]`);
+            if(activeTab) activeTab.classList.add('active');
+            
+            document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
+            document.getElementById(`${panelId}-panel`).classList.add('active');
+            
+            stopWebcam();
+            if (panelId === 'webcam') {
+                startWebcam();
+            }
+        }
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => showPanel(tab.dataset.panel));
+        });
+
+        // --- FaceAPI setup ---
+        async function loadFaceApi() {
+            statusDiv.innerText = '正在加载人脸识别模型...';
+            try {
+                await faceapi.nets.tinyFaceDetector.loadFromUri('/static/weights');
+                faceApiLoaded = true;
+                statusDiv.innerText = '模型加载完毕。';
+            } catch (e) {
+                statusDiv.innerText = '加载人脸识别模型失败。请检查 /static/weights 目录中的文件。';
+                console.error("FaceAPI model loading failed", e);
+            }
+        }
+
+        // --- Webcam logic ---
+        async function startWebcam() {
+            if (!faceApiLoaded) await loadFaceApi();
+            if (!faceApiLoaded) return; // Don't proceed if models failed to load
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                webcamVideo.srcObject = stream;
+                webcamVideo.onloadedmetadata = () => {
+                    overlayCanvas.width = webcamVideo.videoWidth;
+                    overlayCanvas.height = webcamVideo.videoHeight;
+                    startFaceDetection();
+                };
+            } catch (error) {
+                statusDiv.innerText = '无法访问摄像头。请授予权限。';
+                console.error('Error accessing webcam:', error);
+            }
+        }
+
+        function stopWebcam() {
+            if (webcamVideo.srcObject) {
+                webcamVideo.srcObject.getTracks().forEach(track => track.stop());
+                webcamVideo.srcObject = null;
+            }
+            clearInterval(faceDetectionInterval);
+            const context = overlayCanvas.getContext('2d');
+            context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        function startFaceDetection() {
+            faceDetectionInterval = setInterval(async () => {
+                const detections = await faceapi.detectAllFaces(webcamVideo, new faceapi.TinyFaceDetectorOptions());
+                const context = overlayCanvas.getContext('2d');
+                context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                if (detections.length > 0) {
+                    faceDetected = true;
+                    recordButton.disabled = false;
+                    statusDiv.innerText = '检测到人脸，可以开始录制。';
+                    faceapi.draw.drawDetections(overlayCanvas, detections);
+                } else {
+                    faceDetected = false;
+                    recordButton.disabled = true;
+                    statusDiv.innerText = '未检测到人脸，请将面部对准摄像头。';
+                }
+            }, 500);
+        }
+
+        // --- Recording logic ---
+        recordButton.addEventListener('click', () => {
+            if (!faceDetected) {
+                statusDiv.innerText = '请先将人脸对准摄像头。';
+                return;
+            }
+
+            recordButton.disabled = true;
+            recordedChunks = [];
+            const stream = webcamVideo.srcObject;
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+                const videoFile = new File([videoBlob], 'webcam-recording.webm', { type: 'video/webm' });
+                const formData = new FormData();
+                formData.append('file', videoFile);
+                uploadVideo(formData);
+            };
+
+            mediaRecorder.start();
+            let countdown = 30;
+            statusDiv.innerText = `正在录制... ${countdown}s`;
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                statusDiv.innerText = `正在录制... ${countdown}s`;
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    mediaRecorder.stop();
+                }
+            }, 1000);
+        });
+
+        // --- Upload logic ---
+        uploadButton.addEventListener('click', () => {
+            const file = videoFileInput.files[0];
+            if (!file) {
+                statusDiv.innerText = '请先选择一个文件。';
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            uploadVideo(formData);
+        });
+
+        async function uploadVideo(formData) {
+            statusDiv.innerText = '正在上传并分析视频...';
+            loader.style.display = 'block';
+            resultDiv.innerText = '';
+
+            try {
+                const response = await fetch('/predict/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || '分析失败。');
+                }
+
+                const data = await response.json();
+                resultDiv.innerText = `检测结果：您的心率大约为 ${data.heart_rate} ${data.units}。`;
+
+            } catch (error) {
+                resultDiv.innerText = `错误：${error.message}`;
+            } finally {
+                statusDiv.innerText = '分析完成。';
+                loader.style.display = 'none';
+                recordButton.disabled = false; // Re-enable record button
+            }
+        }
+
+        // Initialize
+        const webcamTab = document.querySelector('.tab[data-panel="webcam"]');
+        if (!allowWebcamFeature) {
+            if (webcamTab) {
+                webcamTab.style.display = 'none';
+            }
+        }
+        showPanel('upload'); // 默认显示上传面板
+    });
+    </script>
+</body>
+</html>
