@@ -12,10 +12,10 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 
-WORKDIR /opt/rPPG
+WORKDIR /opt/rppg
 
-COPY ./requirements.txt /opt/rPPG/requirements.txt
+COPY ./requirements.txt /opt/rppg/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade -r /opt/rPPG/requirements.txt  -i https://pypi.tuna.tsinghua.edu.cn/simple/ --trusted-host pypi.tuna.tsinghua.edu.cn
+RUN pip install --no-cache-dir --upgrade -r /opt/rppg/requirements.txt  -i https://pypi.tuna.tsinghua.edu.cn/simple/ --trusted-host pypi.tuna.tsinghua.edu.cn
 
 CMD ["/bin/bash"]
