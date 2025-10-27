@@ -5,26 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>好心情 心率检测</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 2em; background: #f4f4f9; color: #333; }
+        /* 基础样式 */
+        body { font-family: Arial, sans-serif; margin: 1em; background: #f4f4f9; color: #333; }
         h1, h2 { text-align: center; color: #4a4a4a; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 2em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        h1 { font-size: 1.8em; }
+        h2 { font-size: 1.4em; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 1.5em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
         .tab-container { display: flex; justify-content: center; margin-bottom: 1.5em; }
         .tab { padding: 10px 20px; cursor: pointer; border-bottom: 3px solid transparent; }
         .tab.active { border-bottom: 3px solid #007bff; }
         .panel { display: none; }
         .panel.active { display: block; }
         .upload-section, .webcam-section { text-align: center; padding: 1em 0; }
-        #webcam-wrapper { position: relative; display: inline-block; margin: 1em 0; }
-        #webcam-video, #overlay-canvas { border-radius: 8px; }
-        #overlay-canvas { position: absolute; top: 0; left: 0; }
+        
+        /* 摄像头容器 - 使用相对单位 */
+        #webcam-wrapper { position: relative; display: inline-block; margin: 1em auto; width: 100%; max-width: 640px; height: 0; padding-bottom: 75%; /* 4:3 比例 */ overflow: hidden; }
+        #webcam-video, #overlay-canvas { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; border-radius: 8px; }
+        #webcam-video { object-fit: cover; }
+        #overlay-canvas { pointer-events: none; }
+        
+        /* 状态和结果显示 */
         #status, #result { margin-top: 1em; font-size: 1.2em; font-weight: bold; text-align: center; padding: 1em; border-radius: 5px; }
         #result { background: #e7f3ff; color: #007bff; }
+        
+        /* 加载动画 */
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 20px auto; display: none; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; margin: 0.5em; }
+        
+        /* 按钮样式 - 增大尺寸以便触摸操作 */
+        button { background-color: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; margin: 0.8em; min-width: 120px; }
         button:disabled { background-color: #cccccc; }
-        input[type="file"] { margin: 1em 0; }
-    </style>
+        input[type="file"] { margin: 1em 0; font-size: 1em; }
+        
+        /* 响应式设计 - 手机端适配 */
+        @media (max-width: 768px) {
+            body { margin: 0.5em; }
+            .container { padding: 1em; }
+            h1 { font-size: 1.5em; }
+            h2 { font-size: 1.2em; }
+            button { padding: 15px 25px; font-size: 1.2em; width: 80%; max-width: 250px; margin: 0.5em auto; display: block; }
+            .tab { padding: 8px 15px; font-size: 0.9em; }
+            #status, #result { font-size: 1.1em; padding: 0.8em; }
+            #webcam-wrapper { max-width: 100%; }
+        }
+        
+        /* 适配非常小的屏幕 */
+        @media (max-width: 480px) {
+            h1 { font-size: 1.3em; }
+            h2 { font-size: 1.1em; }
+            button { padding: 12px 20px; font-size: 1em; width: 90%; }
+            #webcam-wrapper { padding-bottom: 133%; /* 3:4 竖屏比例，更适合手机竖屏使用 */ }
+        }
+        </style>
     <!-- Load face-api.js -->
     <script defer src="/static/face-api.min.js"></script>
 </head>
@@ -53,7 +85,7 @@
             <div class="webcam-section">
                 <h2>通过摄像头录制30秒</h2>
                 <div id="webcam-wrapper">
-                    <video id="webcam-video" width="640" height="480" autoplay muted></video>
+                    <video id="webcam-video" autoplay muted playsinline></video>
                     <canvas id="overlay-canvas"></canvas>
                 </div>
                 <br>
@@ -126,11 +158,30 @@
             if (!faceApiLoaded) await loadFaceApi();
             if (!faceApiLoaded) return; // Don't proceed if models failed to load
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // 优化视频约束，优先使用前置摄像头，并设置合适的分辨率
+                const videoConstraints = {
+                    facingMode: 'user', // 优先使用前置摄像头
+                    width: {
+                        ideal: 640,
+                        max: 1280
+                    },
+                    height: {
+                        ideal: 480,
+                        max: 720
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
                 webcamVideo.srcObject = stream;
                 webcamVideo.onloadedmetadata = () => {
+                    // 设置canvas尺寸以匹配视频
                     overlayCanvas.width = webcamVideo.videoWidth;
                     overlayCanvas.height = webcamVideo.videoHeight;
+                    
+                    // 响应式设计：移除固定尺寸设置
+                    // 视频和Canvas的尺寸由CSS媒体查询和相对单位自动处理
+                    // 移除所有style.width和style.height设置，让CSS接管布局
+                    
                     // 确保录制按钮在摄像头启动后仍然可用
                     recordButton.disabled = false;
                     startFaceDetection();
