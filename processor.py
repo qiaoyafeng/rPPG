@@ -15,7 +15,7 @@ from utils import moving_avg
 # from utils import *
 
 
-FRAME_SUBSAMPLE_RATE = 3
+FRAME_SUBSAMPLE_RATE = 6
 
 
 # --------------------------------

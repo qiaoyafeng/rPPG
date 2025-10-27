@@ -25,8 +25,17 @@
         #overlay-canvas { pointer-events: none; }
         
         /* 状态和结果显示 */
-        #status, #result { margin-top: 1em; font-size: 1.2em; font-weight: bold; text-align: center; padding: 1em; border-radius: 5px; }
-        #result { background: #e7f3ff; color: #007bff; }
+        #result { margin-top: 1em; font-size: 1.2em; font-weight: bold; text-align: center; padding: 1em; border-radius: 5px; background: #e7f3ff; color: #007bff; }
+        
+        /* 倒计时专用样式 */
+        #status.countdown-active {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #007bff;
+            background-color: rgba(0, 123, 255, 0.1);
+            padding: 0.5em;
+            border-radius: 8px;
+        }
         
         /* 加载动画 */
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin: 20px auto; display: none; }
@@ -55,6 +64,12 @@
             h2 { font-size: 1.1em; }
             button { padding: 12px 20px; font-size: 1em; width: 90%; }
             #webcam-wrapper { padding-bottom: 133%; /* 3:4 竖屏比例，更适合手机竖屏使用 */ }
+            
+            /* 为移动设备添加更醒目的倒计时样式 */
+            #status.countdown-active {
+                font-size: 3em;
+                color: #007bff;
+            }
         }
         </style>
     <!-- Load face-api.js -->
@@ -212,21 +227,16 @@
                 const detections = await faceapi.detectAllFaces(webcamVideo, options);
                 const context = overlayCanvas.getContext('2d');
                 context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                
                 // 无论是否检测到人脸，都保持录制按钮可用状态
                 if (detections.length > 0) {
                     faceDetected = true;
-                    // 不再根据人脸检测结果启用/禁用录制按钮
-                    // 只在未录制时更新状态文本，录制时不干扰倒计时显示
-                    if (!mediaRecorder || mediaRecorder.state !== 'recording') {
-                        statusDiv.innerText = '检测到人脸，可以开始录制。';
-                    }
+                    // 完全移除状态文本更新，避免干扰倒计时显示
+                    // 只绘制检测框，不更新状态文本
                     faceapi.draw.drawDetections(overlayCanvas, detections);
                 } else {
                     faceDetected = false;
-                    // 不再禁用录制按钮
-                    if (!mediaRecorder || mediaRecorder.state !== 'recording') {
-                        statusDiv.innerText = '未检测到人脸，但仍可录制。';
-                    }
+                    // 完全移除状态文本更新，避免干扰倒计时显示
                 }
             }, 500);
         }
@@ -260,17 +270,47 @@
             };
 
             mediaRecorder.start();
-            let countdown = 30;
-            // 只显示倒计时信息
-            statusDiv.innerText = `${countdown}s`;
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                statusDiv.innerText = `${countdown}s`;
-                if (countdown <= 0) {
-                    clearInterval(countdownInterval);
-                    mediaRecorder.stop();
+            
+            // 使用更可靠的倒计时实现，确保在手机浏览器上正确显示
+            const duration = 30; // 30秒
+            const startTime = Date.now();
+            
+            // 添加倒计时专用样式类
+            statusDiv.classList.add('countdown-active');
+            
+            function updateCountdown() {
+                try {
+                    // 计算剩余时间
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const remaining = Math.max(0, Math.ceil(duration - elapsed));
+                    
+                    // 使用textContent代替innerText以提高兼容性
+                    statusDiv.textContent = `${remaining}s`;
+                    
+                    // 检查录制状态
+                    if (mediaRecorder && mediaRecorder.state === 'recording' && remaining > 0) {
+                        // 使用setTimeout而不是setInterval来确保更稳定的更新
+                        setTimeout(updateCountdown, 500); // 每500ms更新一次，提高响应性
+                    } else if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        // 时间到，停止录制
+                        statusDiv.classList.remove('countdown-active');
+                        mediaRecorder.stop();
+                    } else {
+                        // 录制已停止，清理样式
+                        statusDiv.classList.remove('countdown-active');
+                    }
+                } catch (e) {
+                    console.error('Error in countdown:', e);
+                    // 出错时清理
+                    statusDiv.classList.remove('countdown-active');
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
                 }
-            }, 1000);
+            }
+            
+            // 启动倒计时更新
+            updateCountdown();
         });
 
         // --- Upload logic ---
@@ -286,9 +326,11 @@
         });
 
         async function uploadVideo(formData) {
-            statusDiv.innerText = '正在上传并分析视频...';
+            // 确保移除倒计时样式类
+            statusDiv.classList.remove('countdown-active');
+            statusDiv.textContent = '正在上传并分析视频...';
             loader.style.display = 'block';
-            resultDiv.innerText = '';
+            resultDiv.textContent = '';
 
             try {
                 const response = await fetch('/predict/', {
