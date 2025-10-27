@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>rPPG 心率检测</title>
+    <title>好心情 心率检测</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 2em; background: #f4f4f9; color: #333; }
         h1, h2 { text-align: center; color: #4a4a4a; }
@@ -31,7 +31,7 @@
 <body>
 
     <div class="container">
-        <h1>rPPG 远程心率检测</h1>
+        <h1>好心情 远程心率检测</h1>
 
         <div class="tab-container">
             <div class="tab active" data-panel="upload">上传视频</div>
@@ -79,11 +79,15 @@
         const resultDiv = document.getElementById('result');
         const loader = document.getElementById('loader');
         
+        // 初始化变量
         let mediaRecorder;
         let recordedChunks = [];
         let faceApiLoaded = false;
         let faceDetected = false;
         let faceDetectionInterval;
+        
+        // 设置录制按钮初始状态为可用
+        recordButton.disabled = false;
 
         // --- Tab logic ---
         function showPanel(panelId) {
@@ -127,6 +131,8 @@
                 webcamVideo.onloadedmetadata = () => {
                     overlayCanvas.width = webcamVideo.videoWidth;
                     overlayCanvas.height = webcamVideo.videoHeight;
+                    // 确保录制按钮在摄像头启动后仍然可用
+                    recordButton.disabled = false;
                     startFaceDetection();
                 };
             } catch (error) {
@@ -147,33 +153,46 @@
 
         function startFaceDetection() {
             faceDetectionInterval = setInterval(async () => {
-                const detections = await faceapi.detectAllFaces(webcamVideo, new faceapi.TinyFaceDetectorOptions());
+                // 配置TinyFaceDetectorOptions，设置低置信度阈值以确保捕捉所有可能的人脸
+                const options = new faceapi.TinyFaceDetectorOptions({
+                    inputSize: 320,
+                    scoreThreshold: 0.0 // 设置最低置信度阈值，确保不过滤任何检测到的人脸
+                });
+                const detections = await faceapi.detectAllFaces(webcamVideo, options);
                 const context = overlayCanvas.getContext('2d');
                 context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                // 无论是否检测到人脸，都保持录制按钮可用状态
                 if (detections.length > 0) {
                     faceDetected = true;
-                    recordButton.disabled = false;
-                    statusDiv.innerText = '检测到人脸，可以开始录制。';
+                    // 不再根据人脸检测结果启用/禁用录制按钮
+                    // 只在未录制时更新状态文本，录制时不干扰倒计时显示
+                    if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+                        statusDiv.innerText = '检测到人脸，可以开始录制。';
+                    }
                     faceapi.draw.drawDetections(overlayCanvas, detections);
                 } else {
                     faceDetected = false;
-                    recordButton.disabled = true;
-                    statusDiv.innerText = '未检测到人脸，请将面部对准摄像头。';
+                    // 不再禁用录制按钮
+                    if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+                        statusDiv.innerText = '未检测到人脸，但仍可录制。';
+                    }
                 }
             }, 500);
         }
 
         // --- Recording logic ---
         recordButton.addEventListener('click', () => {
-            if (!faceDetected) {
-                statusDiv.innerText = '请先将人脸对准摄像头。';
-                return;
-            }
-
+            // 移除人脸检测检查，允许用户随时开始录制
             recordButton.disabled = true;
             recordedChunks = [];
             const stream = webcamVideo.srcObject;
-            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            // 配置录制选项，尝试实现30帧每秒的帧率
+            const options = {
+                mimeType: 'video/webm;codecs=vp9',
+                videoBitsPerSecond: 5000000, // 5Mbps的比特率
+                // 注意：浏览器可能不支持精确控制帧率，但通过高比特率可以提高录制质量
+            };
+            mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
@@ -191,10 +210,11 @@
 
             mediaRecorder.start();
             let countdown = 30;
-            statusDiv.innerText = `正在录制... ${countdown}s`;
+            // 只显示倒计时信息
+            statusDiv.innerText = `${countdown}s`;
             const countdownInterval = setInterval(() => {
                 countdown--;
-                statusDiv.innerText = `正在录制... ${countdown}s`;
+                statusDiv.innerText = `${countdown}s`;
                 if (countdown <= 0) {
                     clearInterval(countdownInterval);
                     mediaRecorder.stop();

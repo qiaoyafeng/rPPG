@@ -10,7 +10,7 @@ import uvicorn
 from processor import HeartRateProcessor
 
 # --- Configuration ---
-ALLOW_WEBCAM_FEATURE = False # 设置为 False 可以禁用摄像头功能
+ALLOW_WEBCAM_FEATURE = True # 设置为 False 可以禁用摄像头功能
 # ---------------------
 
 UPLOAD_DIR = "uploads"
@@ -44,16 +44,16 @@ async def predict_heart_rate(file: UploadFile = File(...)):
         heart_rate = processor.process(temp_video_path)
 
         if heart_rate == -1.0:
-            raise HTTPException(status_code=400, detail="Video is too short for processing. It must be longer than 3.2 seconds after frame sampling.")
+            raise HTTPException(status_code=400, detail="视频太短，无法处理。")
         if heart_rate == 0.0:
-            raise HTTPException(status_code=400, detail="Could not process video or no frames found.")
+            raise HTTPException(status_code=400, detail="无法处理视频或未找到有效帧。")
 
         # Return the result
         return {"heart_rate": int(heart_rate), "units": "bpm"}
 
     except Exception as e:
         # Catch any other exceptions from the processing
-        raise HTTPException(status_code=500, detail=f"An error occurred during processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"处理过程中发生错误: {str(e)}")
 
     finally:
         # Clean up the uploaded file
