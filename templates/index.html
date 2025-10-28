@@ -326,7 +326,6 @@
         });
 
         async function uploadVideo(formData) {
-            // 确保移除倒计时样式类
             statusDiv.classList.remove('countdown-active');
             statusDiv.textContent = '正在上传并分析视频...';
             loader.style.display = 'block';
@@ -340,18 +339,55 @@
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.detail || '分析失败。');
+                    throw new Error(errorData.detail || '上传失败。');
                 }
 
                 const data = await response.json();
-                resultDiv.innerText = `检测结果：您的心率大约为 ${data.heart_rate} ${data.units}。`;
+                const taskId = data.task_id;
+                statusDiv.textContent = '视频上传成功，正在后台处理...';
+                
+                // Start polling for the result
+                pollTask(taskId);
 
             } catch (error) {
                 resultDiv.innerText = `错误：${error.message}`;
-            } finally {
-                statusDiv.innerText = '分析完成。';
+                statusDiv.textContent = '处理失败。';
                 loader.style.display = 'none';
-                recordButton.disabled = false; // Re-enable record button
+                recordButton.disabled = false;
+            }
+        }
+
+        async function pollTask(taskId) {
+            try {
+                const response = await fetch(`/task_status/${taskId}`);
+                
+                if (!response.ok) {
+                    // If the server returns a 404 or other error, stop polling
+                    throw new Error('任务状态查询失败。');
+                }
+
+                const data = await response.json();
+
+                if (data.status === 'processing') {
+                    // If still processing, poll again after 3 seconds
+                    setTimeout(() => pollTask(taskId), 3000);
+                } else if (data.status === 'completed') {
+                    // If completed, display the result
+                    const result = data.result;
+                    resultDiv.innerText = `检测结果：您的心率大约为 ${result.heart_rate} ${result.units}。`;
+                    statusDiv.textContent = '分析完成。';
+                    loader.style.display = 'none';
+                    recordButton.disabled = false;
+                } else if (data.status === 'error') {
+                    // If there was an error, show the error message
+                    throw new Error(data.detail || '处理过程中发生未知错误。');
+                }
+
+            } catch (error) {
+                resultDiv.innerText = `错误：${error.message}`;
+                statusDiv.textContent = '处理失败。';
+                loader.style.display = 'none';
+                recordButton.disabled = false;
             }
         }
 

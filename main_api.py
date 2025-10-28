@@ -1,71 +1,128 @@
-
 import os
 import shutil
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
-from fastapi.responses import HTMLResponse
+import uuid
+import json
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, BackgroundTasks
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from typing import Dict
 
 from processor import HeartRateProcessor
 
 # --- Configuration ---
-ALLOW_WEBCAM_FEATURE = True # 设置为 False 可以禁用摄像头功能
+
+ALLOW_WEBCAM_FEATURE = True  # 设置为 False 可以禁用摄像头功能
 # ---------------------
 
+
 UPLOAD_DIR = "uploads"
+RESULTS_DIR = "results"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 app = FastAPI(title="rPPG Heart Rate API")
 
-# --- Global instances ---
-# Load the model and processor once when the application starts
+# --- Global instances & Data Structures ---
+
 processor = HeartRateProcessor()
-# ----------------------
+tasks: Dict[str, Dict] = {}
+# -----------------------------------------
+
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
 templates = Jinja2Templates(directory="templates")
 
 
-@app.post("/predict/")
-async def predict_heart_rate(file: UploadFile = File(...)):
+def run_video_processing(task_id: str, video_path: str):
     """
-    Accepts a video file, processes it, and returns the calculated heart rate.
+    A background task to process the video, save results, and update task status.
     """
-    temp_video_path = None
     try:
-        # Save the uploaded video file temporarily
-        temp_video_path = os.path.join(UPLOAD_DIR, file.filename)
-        with open(temp_video_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Use the global processor instance
-        heart_rate = processor.process(temp_video_path)
-
+        heart_rate = processor.process(video_path)
+        
+        result_data = {}
         if heart_rate == -1.0:
-            raise HTTPException(status_code=400, detail="视频太短，无法处理。")
+            tasks[task_id] = {"status": "error", "detail": "视频太短，无法处理。"}
+            return
         if heart_rate == 0.0:
-            raise HTTPException(status_code=400, detail="无法处理视频或未找到有效帧。")
+            tasks[task_id] = {"status": "error", "detail": "无法处理视频或未找到有效帧。"}
+            return
 
-        # Return the result
-        return {"heart_rate": int(heart_rate), "units": "bpm"}
+        result_data = {"heart_rate": int(heart_rate), "units": "bpm"}
+        
+        # Save result to a file
+        result_filepath = os.path.join(RESULTS_DIR, f"{task_id}.json")
+        with open(result_filepath, 'w') as f:
+            json.dump(result_data, f)
+            
+        # Update task status to completed
+        tasks[task_id] = {"status": "completed", "result_path": result_filepath}
 
     except Exception as e:
-        # Catch any other exceptions from the processing
-        raise HTTPException(status_code=500, detail=f"处理过程中发生错误: {str(e)}")
-
+        tasks[task_id] = {"status": "error", "detail": f"处理过程中发生错误: {str(e)}"}
     finally:
-        # Clean up the uploaded file
-        if temp_video_path and os.path.exists(temp_video_path):
-            os.remove(temp_video_path)
-        # Close the file handle
-        if file:
-            await file.close()
+        # The video file is intentionally kept for future reference.
+        pass
+
+
+@app.post("/predict/")
+async def predict_heart_rate(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    Accepts a video file, starts a background processing task, and returns a task ID.
+    """
+    task_id = str(uuid.uuid4())
+    # Use a unique filename based on task_id to avoid conflicts
+    file_extension = os.path.splitext(file.filename)[1]
+    video_filename = f"{task_id}{file_extension}"
+    video_path = os.path.join(UPLOAD_DIR, video_filename)
+
+    try:
+        with open(video_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"无法保存上传文件: {str(e)}")
+    finally:
+        await file.close()
+
+    # Initialize task status
+    tasks[task_id] = {"status": "processing"}
+
+    # Add the processing to background tasks
+    background_tasks.add_task(run_video_processing, task_id, video_path)
+
+    return {"task_id": task_id}
+
+
+@app.get("/task_status/{task_id}")
+async def get_task_status(task_id: str):
+    """
+    Polls for the status of a background task.
+    """
+    task = tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务ID未找到。")
+
+    if task["status"] == "completed":
+        result_path = task.get("result_path")
+        if result_path and os.path.exists(result_path):
+            with open(result_path, 'r') as f:
+                result = json.load(f)
+            return {"status": "completed", "result": result}
+        else:
+            return {"status": "error", "detail": "结果文件未找到。"}
+            
+    elif task["status"] == "error":
+        return {"status": "error", "detail": task.get("detail", "未知错误。")}
+        
+    return {"status": "processing"}
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "allow_webcam": ALLOW_WEBCAM_FEATURE})
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
