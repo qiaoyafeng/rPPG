@@ -350,6 +350,8 @@
             // 添加倒计时专用样式类
             statusDiv.classList.add('countdown-active');
             
+            let animationFrameId;
+
             function updateCountdown() {
                 try {
                     // 计算剩余时间
@@ -357,22 +359,30 @@
                     const remaining = Math.max(0, Math.ceil(duration - elapsed));
                     
                     // 使用textContent代替innerText以提高兼容性
-                    statusDiv.textContent = `${remaining}s`;
+                    const newText = `${remaining}s`;
+                    if (statusDiv.textContent !== newText) {
+                        statusDiv.textContent = newText;
+                    }
                     
                     // 检查录制状态
                     if (mediaRecorder && mediaRecorder.state === 'recording' && remaining > 0) {
-                        // 使用setTimeout而不是setInterval来确保更稳定的更新
-                        setTimeout(updateCountdown, 500); // 每500ms更新一次，提高响应性
-                    } else if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        // 时间到，停止录制
-                        statusDiv.classList.remove('countdown-active');
-                        mediaRecorder.stop();
+                        // 使用requestAnimationFrame来进行下一次更新
+                        animationFrameId = requestAnimationFrame(updateCountdown);
                     } else {
-                        // 录制已停止，清理样式
+                        // 时间到或录制停止
+                        if (animationFrameId) {
+                            cancelAnimationFrame(animationFrameId);
+                        }
                         statusDiv.classList.remove('countdown-active');
+                        if (mediaRecorder && mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                        }
                     }
                 } catch (e) {
                     console.error('Error in countdown:', e);
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                    }
                     // 出错时清理
                     statusDiv.classList.remove('countdown-active');
                     if (mediaRecorder && mediaRecorder.state === 'recording') {
@@ -382,7 +392,7 @@
             }
             
             // 启动倒计时更新
-            updateCountdown();
+            animationFrameId = requestAnimationFrame(updateCountdown);
         });
 
         // --- Upload logic ---
