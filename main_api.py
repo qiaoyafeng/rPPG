@@ -52,6 +52,9 @@ def run_video_processing(task_id: str, video_path: str):
                 "rmssd": round(result["hrv_metrics"]["rmssd"], 2),
                 "sdnn": round(result["hrv_metrics"]["sdnn"], 2),
                 "pnn50": round(result["hrv_metrics"]["pnn50"], 2),
+                "lf": round(result["hrv_metrics"]["lf"], 2),
+                "hf": round(result["hrv_metrics"]["hf"], 2),
+                "lf_hf_ratio": round(result["hrv_metrics"]["lf_hf_ratio"], 2)
             },
             "hrv_health": {
                 "index": round(result["hrv_health"]["index"], 2),
@@ -61,7 +64,15 @@ def run_video_processing(task_id: str, video_path: str):
                 "score": round(result["stress"]["score"], 2),
                 "range": result["stress"]["range"],
             },
-            "units": {"heart_rate": "bpm", "rmssd": "ms", "sdnn": "ms"}
+            "units": {
+                "heart_rate": "bpm", 
+                "rmssd": "ms", 
+                "sdnn": "ms",
+                "pnn50": "%",
+                "lf": "ms²",
+                "hf": "ms²",
+                "lf_hf_ratio": "-"
+            }
         }
 
         result_filepath = os.path.join(RESULTS_DIR, f"{task_id}.json")

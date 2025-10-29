@@ -4,7 +4,7 @@ import torch
 import torchvision.transforms as transforms
 from PIL import Image
 from torch.autograd import Variable
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, welch
 from typing import Tuple, Dict, Any
 
 from models import LinkNet34
@@ -24,36 +24,169 @@ FRAME_SUBSAMPLE_RATE = 6
 
 def calculate_hrv_metrics(pulse_signal: np.ndarray, fs: float) -> Dict[str, float]:
     """
-    Calculates HRV metrics (RMSSD, SDNN, pNN50) from the pulse signal.
+    Calculates HRV metrics from a pulse signal, including both time domain and frequency domain metrics.
+    Args:
+        pulse_signal: The pulse signal
+        fs: Sampling frequency of the signal
+    Returns:
+        Dictionary containing HRV metrics
     """
+    # 计算R波峰值位置
     peaks, _ = find_peaks(pulse_signal, distance=fs / 2)
-
+    
+    # 初始化结果字典，包含所有指标的默认值
+    result = {
+        "rmssd": 0.0,
+        "sdnn": 0.0,
+        "pnn50": 0.0,
+        "lf": 0.0,
+        "hf": 0.0,
+        "lf_hf_ratio": 0.0
+    }
+    
+    # 如果峰值太少，返回默认值
     if len(peaks) < 2:
-        return {"rmssd": 0.0, "sdnn": 0.0, "pnn50": 0.0}
-
+        return result
+    
+    # 计算NN间隔（以毫秒为单位）
     rr_intervals = np.diff(peaks) / fs  # in seconds
     nn_intervals = rr_intervals * 1000  # in ms
-
+    
     if len(nn_intervals) < 2:
-        return {"rmssd": 0.0, "sdnn": 0.0, "pnn50": 0.0}
+        return result
+    
+    # 时域HRV指标
+    rmssd = np.sqrt(np.mean(np.square(np.diff(nn_intervals))))  # Root Mean Square of Successive Differences
+    sdnn = np.std(nn_intervals)  # Standard Deviation of NN intervals
+    
+    # 计算pNN50
+    nn_diffs = np.abs(np.diff(nn_intervals))
+    pnn50 = (np.sum(nn_diffs > 50) / len(nn_diffs)) * 100 if len(nn_diffs) > 0 else 0.0
+    
+    # 计算频域指标
+    lf, hf, lf_hf_ratio = calculate_frequency_domain_metrics(nn_intervals)
+    
+    # 更新结果字典并进行四舍五入
+    result.update({
+        "rmssd": round(rmssd, 2),
+        "sdnn": round(sdnn, 2),
+        "pnn50": round(pnn50, 2),
+        "lf": round(lf, 2),
+        "hf": round(hf, 2),
+        "lf_hf_ratio": round(lf_hf_ratio, 2)
+    })
+    
+    return result
 
-    rmssd = np.sqrt(np.mean(np.square(np.diff(nn_intervals))))
-    sdnn = np.std(nn_intervals)
-    pnn50 = (np.sum(np.abs(np.diff(nn_intervals)) > 50) / len(nn_intervals)) * 100
 
-    return {"rmssd": rmssd, "sdnn": sdnn, "pnn50": pnn50}
+def calculate_frequency_domain_metrics(nn_intervals: np.ndarray) -> Tuple[float, float, float]:
+    """
+    Calculates frequency domain HRV metrics using Welch's method with improved robustness.
+    
+    Returns:
+        Tuple[float, float, float]: LF (0.04-0.15 Hz), HF (0.15-0.4 Hz), and LF/HF ratio
+    """
+    try:
+        # 确保RR间隔数据有效且足够长
+        if len(nn_intervals) < 10:  # 降低阈值，允许较短的数据进行分析
+            return 0.0, 0.0, 0.0
+        
+        # 检查数据有效性
+        if np.any(nn_intervals <= 0) or np.isnan(np.sum(nn_intervals)):
+            return 0.0, 0.0, 0.0
+        
+        # 创建时间向量（以秒为单位），确保从0开始
+        time = np.cumsum(nn_intervals / 1000)
+        
+        # 重新调整时间序列，从0开始
+        time = time - time[0]
+        
+        # 如果时间序列太短，返回0值
+        if time[-1] < 10:  # 至少需要10秒的数据
+            return 0.0, 0.0, 0.0
+        
+        # 使用线性插值代替样条插值，更加稳健
+        from scipy.interpolate import interp1d
+        try:
+            # 归一化NN间隔数据，提高数值稳定性
+            nn_mean = np.mean(nn_intervals)
+            nn_std = np.std(nn_intervals)
+            
+            # 避免除以0
+            if nn_std > 0:
+                nn_intervals_norm = (nn_intervals - nn_mean) / nn_std
+            else:
+                nn_intervals_norm = nn_intervals - nn_mean
+            
+            # 使用线性插值，避免多项式插值可能带来的问题
+            # 明确设置边界条件为0，避免外推问题
+            f = interp1d(time, nn_intervals_norm, kind='linear', bounds_error=False, fill_value=0)
+            
+            # 创建均匀采样的时间向量，从0开始
+            sampling_rate = 4  # 每秒采样点数
+            t_uniform = np.arange(0, time[-1], 1/sampling_rate)
+            
+            # 确保新时间向量不为空
+            if len(t_uniform) < 5:
+                return 0.0, 0.0, 0.0
+                
+            nn_intervals_uniform = f(t_uniform)
+            
+            # 恢复原始尺度
+            if nn_std > 0:
+                nn_intervals_uniform = nn_intervals_uniform * nn_std + nn_mean
+            else:
+                nn_intervals_uniform = nn_intervals_uniform + nn_mean
+            
+            # 计算采样频率
+            fs = sampling_rate
+            
+            # 优化Welch方法的参数
+            nperseg = min(256, len(nn_intervals_uniform) // 2)  # 使用较小的段长以适应较短的数据
+            noverlap = nperseg // 2  # 50%重叠
+            
+            # 使用Welch方法计算功率谱密度
+            fxx, pxx = welch(nn_intervals_uniform, fs=fs, nperseg=nperseg, noverlap=noverlap)
+            
+            # 定义频率范围
+            lf_band = (0.04, 0.15)  # 低频带 (0.04-0.15 Hz)
+            hf_band = (0.15, 0.4)   # 高频带 (0.15-0.4 Hz)
+            
+            # 计算LF功率
+            lf_idx = np.logical_and(fxx >= lf_band[0], fxx <= lf_band[1])
+            lf = np.trapz(pxx[lf_idx], fxx[lf_idx]) if np.any(lf_idx) else 0.0
+            
+            # 计算HF功率
+            hf_idx = np.logical_and(fxx >= hf_band[0], fxx <= hf_band[1])
+            hf = np.trapz(pxx[hf_idx], fxx[hf_idx]) if np.any(hf_idx) else 0.0
+            
+            # 计算LF/HF比值
+            lf_hf_ratio = lf / hf if hf > 0 else 0.0
+            
+            return lf, hf, lf_hf_ratio
+            
+        except Exception as interp_error:
+            print(f"插值过程错误: {interp_error}")
+            # 如果插值失败，使用更简单的方法或直接返回0值
+            return 0.0, 0.0, 0.0
+            
+    except Exception as e:
+        # 如果频域分析失败，返回0值
+        print(f"频域分析错误: {e}")
+        return 0.0, 0.0, 0.0
 
 
 def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     """
-    Calculates an HRV health index based on RMSSD, SDNN, and pNN50.
-    This is a simplified model for demonstration.
+    Calculates an HRV health index based on both time domain and frequency domain metrics.
     """
-    rmssd = hrv_metrics["rmssd"]
-    sdnn = hrv_metrics["sdnn"]
-    pnn50 = hrv_metrics["pnn50"]
+    rmssd = hrv_metrics.get("rmssd", 0.0)
+    sdnn = hrv_metrics.get("sdnn", 0.0)
+    pnn50 = hrv_metrics.get("pnn50", 0.0)
+    hf = hrv_metrics.get("hf", 0.0)
+    lf_hf_ratio = hrv_metrics.get("lf_hf_ratio", 0.0)
 
-    # Scoring (example thresholds, may need adjustment)
+    # 时域指标评分
     rmssd_score = 0
     if rmssd > 40: rmssd_score = 3
     elif rmssd > 20: rmssd_score = 2
@@ -68,9 +201,28 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     if pnn50 > 10: pnn50_score = 3
     elif pnn50 > 5: pnn50_score = 2
     elif pnn50 > 0: pnn50_score = 1
+    
+    # 频域指标评分
+    hf_score = 0
+    if hf > 500: hf_score = 3
+    elif hf > 200: hf_score = 2
+    elif hf > 0: hf_score = 1
+    
+    lf_hf_ratio_score = 0
+    # LF/HF比值较低通常表示自主神经系统平衡良好
+    if 0.5 <= lf_hf_ratio <= 2.0: lf_hf_ratio_score = 3
+    elif lf_hf_ratio < 0.5 or lf_hf_ratio < 4.0: lf_hf_ratio_score = 2
+    elif lf_hf_ratio > 0: lf_hf_ratio_score = 1
 
-    total_score = rmssd_score + sdnn_score + pnn50_score
-    health_index = (total_score / 9) * 100  # As a percentage
+    # 综合评分，权重可以根据需要调整
+    total_score = rmssd_score + sdnn_score + pnn50_score + hf_score + lf_hf_ratio_score
+    
+    # 计算基础健康指数 (0-100)
+    health_index = (total_score / 15) * 100  
+    
+    # 确保结果在0-100区间内且不为极值
+    # 使用1-99范围确保不会有0或100的极端值
+    health_index = max(1.0, min(99.0, health_index))
 
     if health_index > 80:
         health_range = "Excellent"
@@ -86,19 +238,36 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
 
 def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     """
-    Estimates stress level based on HRV metrics.
-    Lower HRV is often associated with higher stress.
+    Estimates stress level based on both time domain and frequency domain HRV metrics.
+    Lower HRV and higher LF/HF ratio are often associated with higher stress.
     """
-    rmssd = hrv_metrics["rmssd"]
-    sdnn = hrv_metrics["sdnn"]
+    rmssd = hrv_metrics.get("rmssd", 0.0)
+    sdnn = hrv_metrics.get("sdnn", 0.0)
+    hf = hrv_metrics.get("hf", 0.0)
+    lf_hf_ratio = hrv_metrics.get("lf_hf_ratio", 0.0)
 
-    # A simple model combining RMSSD and SDNN
-    stress_score = 10 - ((rmssd / 50) + (sdnn / 60)) # Normalized to a 0-10 scale
-    stress_score = max(0, min(10, stress_score)) # Clamp between 0 and 10
+    # 结合时域和频域指标的压力评分模型
+    # 时域指标：较低的RMSSD和SDNN通常表示较高的压力
+    time_domain_score = 10 - ((rmssd / 50) + (sdnn / 60))
+    
+    # 频域指标：较低的HF和较高的LF/HF比值通常表示较高的压力
+    hf_normalized = hf / 500 if hf > 0 else 0
+    lf_hf_normalized = min(lf_hf_ratio / 5, 1) if lf_hf_ratio > 0 else 0
+    freq_domain_score = 10 - (hf_normalized * 5) + (lf_hf_normalized * 5)
+    
+    # 综合评分（权重可以调整）
+    stress_score = (time_domain_score + freq_domain_score) / 2
+    
+    # 将评分从0-10范围转换为0-100范围
+    stress_score = stress_score * 10
+    
+    # 确保结果在0-100区间内且不为极值
+    # 使用1-99范围确保不会有0或100的极端值
+    stress_score = max(1.0, min(99.0, stress_score))
 
-    if stress_score > 7:
+    if stress_score > 70:
         stress_range = "High"
-    elif stress_score > 4:
+    elif stress_score > 40:
         stress_range = "Medium"
     else:
         stress_range = "Low"
@@ -200,7 +369,16 @@ class HeartRateProcessor:
             "heart_rate": hr,
             "hrv_metrics": hrv_metrics,
             "hrv_health": hrv_health,
-            "stress": stress
+            "stress": stress,
+            "units": {
+                "heart_rate": "bpm",
+                "rmssd": "ms",
+                "sdnn": "ms",
+                "pnn50": "%",
+                "lf": "ms²",
+                "hf": "ms²",
+                "lf_hf_ratio": "-"
+            }
         }
 
 
