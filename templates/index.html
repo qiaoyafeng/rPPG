@@ -25,7 +25,11 @@
         #overlay-canvas { pointer-events: none; }
         
         /* 状态和结果显示 */
-        #result { margin-top: 1em; font-size: 1.2em; font-weight: bold; text-align: center; padding: 1em; border-radius: 5px; background: #e7f3ff; color: #007bff; }
+        #result { margin-top: 1em; font-size: 1.2em; font-weight: bold; text-align: left; padding: 1em; border-radius: 5px; background: #e7f3ff; color: #007bff; }
+        #result h3 { text-align: center;}
+        #result table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        #result th, #result td { padding: 8px; border: 1px solid #ddd; text-align: left; }
+        #result th { background-color: #f2f2f2; }
         
         /* 倒计时专用样式 */
         #status.countdown-active {
@@ -374,7 +378,18 @@
                 } else if (data.status === 'completed') {
                     // If completed, display the result
                     const result = data.result;
-                    resultDiv.innerText = `检测结果：您的心率大约为 ${result.heart_rate} ${result.units}。`;
+                    let resultHTML = `<h3>检测结果：</h3>
+                                      <p><strong>心率:</strong> ${result.heart_rate} ${result.units.heart_rate}</p>
+                                      <h4>HRV 指标:</h4>
+                                      <table>
+                                        <tr><th>指标</th><th>值</th><th>单位</th></tr>
+                                        <tr><td>RMSSD</td><td>${result.hrv_metrics.rmssd}</td><td>${result.units.rmssd}</td></tr>
+                                        <tr><td>SDNN</td><td>${result.hrv_metrics.sdnn}</td><td>${result.units.sdnn}</td></tr>
+                                        <tr><td>pNN50</td><td>${result.hrv_metrics.pnn50}</td><td>%</td></tr>
+                                      </table>
+                                      <p><strong>HRV 健康指数:</strong> ${result.hrv_health.index} (${result.hrv_health.range})</p>
+                                      <p><strong>压力水平:</strong> ${result.stress.score} (${result.stress.range})</p>`;
+                    resultDiv.innerHTML = resultHTML;
                     statusDiv.textContent = '分析完成。';
                     loader.style.display = 'none';
                     recordButton.disabled = false;

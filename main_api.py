@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import uvicorn
-from typing import Dict
+from typing import Dict, Any
 
 from processor import HeartRateProcessor
 
@@ -40,30 +40,39 @@ def run_video_processing(task_id: str, video_path: str):
     A background task to process the video, save results, and update task status.
     """
     try:
-        heart_rate = processor.process(video_path)
-        
-        result_data = {}
-        if heart_rate == -1.0:
-            tasks[task_id] = {"status": "error", "detail": "视频太短，无法处理。"}
-            return
-        if heart_rate == 0.0:
-            tasks[task_id] = {"status": "error", "detail": "无法处理视频或未找到有效帧。"}
+        result = processor.process(video_path)
+
+        if "error" in result:
+            tasks[task_id] = {"status": "error", "detail": result["error"]}
             return
 
-        result_data = {"heart_rate": int(heart_rate), "units": "bpm"}
-        
-        # Save result to a file
+        result_data = {
+            "heart_rate": int(result["heart_rate"]),
+            "hrv_metrics": {
+                "rmssd": round(result["hrv_metrics"]["rmssd"], 2),
+                "sdnn": round(result["hrv_metrics"]["sdnn"], 2),
+                "pnn50": round(result["hrv_metrics"]["pnn50"], 2),
+            },
+            "hrv_health": {
+                "index": round(result["hrv_health"]["index"], 2),
+                "range": result["hrv_health"]["range"],
+            },
+            "stress": {
+                "score": round(result["stress"]["score"], 2),
+                "range": result["stress"]["range"],
+            },
+            "units": {"heart_rate": "bpm", "rmssd": "ms", "sdnn": "ms"}
+        }
+
         result_filepath = os.path.join(RESULTS_DIR, f"{task_id}.json")
         with open(result_filepath, 'w') as f:
             json.dump(result_data, f)
-            
-        # Update task status to completed
+
         tasks[task_id] = {"status": "completed", "result_path": result_filepath}
 
     except Exception as e:
         tasks[task_id] = {"status": "error", "detail": f"处理过程中发生错误: {str(e)}"}
     finally:
-        # The video file is intentionally kept for future reference.
         pass
 
 
@@ -73,7 +82,6 @@ async def predict_heart_rate(background_tasks: BackgroundTasks, file: UploadFile
     Accepts a video file, starts a background processing task, and returns a task ID.
     """
     task_id = str(uuid.uuid4())
-    # Use a unique filename based on task_id to avoid conflicts
     file_extension = os.path.splitext(file.filename)[1]
     video_filename = f"{task_id}{file_extension}"
     video_path = os.path.join(UPLOAD_DIR, video_filename)
@@ -86,10 +94,7 @@ async def predict_heart_rate(background_tasks: BackgroundTasks, file: UploadFile
     finally:
         await file.close()
 
-    # Initialize task status
     tasks[task_id] = {"status": "processing"}
-
-    # Add the processing to background tasks
     background_tasks.add_task(run_video_processing, task_id, video_path)
 
     return {"task_id": task_id}
