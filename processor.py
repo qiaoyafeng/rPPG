@@ -361,7 +361,7 @@ class HeartRateProcessor:
         pulse_signal = moving_avg(pulse_signal, 6)
 
         hr = pulse_calculator.get_rfft_hr(pulse_signal)
-        hrv_metrics = calculate_hrv_metrics(pulse_signal, effective_fs)
+        hrv_metrics = calculate_hrv_metrics(pulse_signal, video_fs)
         hrv_health = calculate_hrv_health_index(hrv_metrics)
         stress = get_stress_level(hrv_metrics)
 
