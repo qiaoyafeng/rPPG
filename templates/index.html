@@ -560,24 +560,24 @@
                     // 设置区间文本
                     let hrvRange = '';
                     if (result.hrv_health.index >= 0 && result.hrv_health.index <= 25) {
-                        hrvRange = '当前区间: 低 (0-25%)';
+                        hrvRange = '当前区间: 低 (0-25)';
                     } else if (result.hrv_health.index > 25 && result.hrv_health.index <= 50) {
-                        hrvRange = '当前区间: 中低 (25-50%)';
+                        hrvRange = '当前区间: 中低 (25-50)';
                     } else if (result.hrv_health.index > 50 && result.hrv_health.index <= 75) {
-                        hrvRange = '当前区间: 良好 (50-75%)';
+                        hrvRange = '当前区间: 良好 (50-75)';
                     } else if (result.hrv_health.index > 75 && result.hrv_health.index <= 100) {
-                        hrvRange = '当前区间: 优秀 (75-100%)';
+                        hrvRange = '当前区间: 优秀 (75-100)';
                     }
                     
                     let stressRange = '';
                     if (result.stress.score >= 0 && result.stress.score <= 25) {
-                        stressRange = '当前区间: 低压力 (0-25%)';
+                        stressRange = '当前区间: 低压力 (0-25)';
                     } else if (result.stress.score > 25 && result.stress.score <= 50) {
-                        stressRange = '当前区间: 轻度压力 (25-50%)';
+                        stressRange = '当前区间: 轻度压力 (25-50)';
                     } else if (result.stress.score > 50 && result.stress.score <= 75) {
-                        stressRange = '当前区间: 中度压力 (50-75%)';
+                        stressRange = '当前区间: 中度压力 (50-75)';
                     } else if (result.stress.score > 75 && result.stress.score <= 100) {
-                        stressRange = '当前区间: 高压力 (75-100%)';
+                        stressRange = '当前区间: 高压力 (75-100)';
                     }
                     
                     // 更新结果HTML，添加区间信息
@@ -745,9 +745,9 @@
                                 },
                                 label: function(context) {
                                     if (context.datasetIndex === 0) {
-                                        return `当前区间: ${currentRange} (${rangeStart}-${rangeEnd}%)`;
+                                        return `当前区间: ${currentRange} (${rangeStart}-${rangeEnd})`;
                                     }
-                                    return `${context.dataset.label}: ${context.raw}%`;
+                                    return `${context.dataset.label}: ${context.raw}`;
                                 }
                             }
                         }
@@ -886,9 +886,9 @@
                                 },
                                 label: function(context) {
                                     if (context.datasetIndex === 0) {
-                                        return `当前区间: ${currentRange} (${rangeStart}-${rangeEnd}%)`;
+                                        return `当前区间: ${currentRange} (${rangeStart}-${rangeEnd})`;
                                     }
-                                    return `${context.dataset.label}: ${context.raw}%`;
+                                    return `${context.dataset.label}: ${context.raw}`;
                                 }
                             }
                         }

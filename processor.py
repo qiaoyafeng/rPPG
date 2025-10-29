@@ -17,7 +17,7 @@ from utils import moving_avg
 # from utils import *
 
 
-FRAME_SUBSAMPLE_RATE = 6
+FRAME_SUBSAMPLE_RATE = 5
 
 
 # --------------------------------
@@ -222,7 +222,7 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     
     # 确保结果在0-100区间内且不为极值
     # 使用1-99范围确保不会有0或100的极端值
-    health_index = max(1.0, min(99.0, health_index))
+    health_index = int(max(1.0, min(99.0, health_index)))
 
     if health_index > 80:
         health_range = "Excellent"
@@ -263,7 +263,7 @@ def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     
     # 确保结果在0-100区间内且不为极值
     # 使用1-99范围确保不会有0或100的极端值
-    stress_score = max(1.0, min(99.0, stress_score))
+    stress_score = int(max(1.0, min(99.0, stress_score)))
 
     if stress_score > 70:
         stress_range = "High"

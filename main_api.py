@@ -57,11 +57,11 @@ def run_video_processing(task_id: str, video_path: str):
                 "lf_hf_ratio": round(result["hrv_metrics"]["lf_hf_ratio"], 2)
             },
             "hrv_health": {
-                "index": round(result["hrv_health"]["index"], 2),
+                "index": int(result["hrv_health"]["index"]),
                 "range": result["hrv_health"]["range"],
             },
             "stress": {
-                "score": round(result["stress"]["score"], 2),
+                "score": int(result["stress"]["score"]),
                 "range": result["stress"]["range"],
             },
             "units": {
