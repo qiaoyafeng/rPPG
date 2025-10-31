@@ -12,6 +12,15 @@
         h1 { font-size: 1.8em; }
         h2 { font-size: 1.4em; }
         .container { max-width: 800px; margin: auto; background: white; padding: 1.5em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        
+        /* Grid Layout for Results */
+        .metrics-grid, .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1em;
+        }
+        h3 { border-bottom: 2px solid #eee; padding-bottom: 0.5em; margin-top: 2em; }
+
         .tab-container { display: flex; justify-content: center; margin-bottom: 1.5em; }
         .tab { padding: 10px 20px; cursor: pointer; border-bottom: 3px solid transparent; }
         .tab.active { border-bottom: 3px solid #007bff; }
@@ -26,47 +35,28 @@
         #overlay-canvas { pointer-events: none; }
         
         /* 状态和结果显示 */
-        #result {
-            margin-top: 1em;
-            font-size: 1.2em;
-            font-weight: bold;
-            text-align: left;
-            padding: 1em;
-            border-radius: 8px;
-            background-color: #f8f9fa;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        #result h3 { text-align: center;}
+        #result-container { margin-top: 1em; }
+        .error { color: #dc3545; text-align: center; font-size: 1.2em; }
         
         /* 结果卡片样式 */
         .result-card {
-            background-color: white;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
             border-radius: 8px;
-            padding: 20px;
-            margin: 15px 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 1em;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
-        
-        .result-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        
-        .result-range {
-            font-size: 1.2em;
-            color: #6c757d;
-            margin-bottom: 5px;
-        }
-        
-        .result-status {
-            font-size: 1.1em;
-            font-weight: 500;
-            margin-bottom: 15px;
-        }
+        .metric-title { font-weight: bold; margin-bottom: 0.5em; color: #495057; }
         
         /* 图表容器样式 */
+        .chart-container {
+            position: relative;
+            height: 100px;
+            width: 100%;
+        }
         canvas {
             max-width: 100%;
             height: auto !important;
@@ -76,28 +66,15 @@
         table {
             width: 100%;
             border-collapse: collapse;
-            margin: 15px 0;
-            background-color: white;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 1em;
         }
-        
         th, td {
-            padding: 12px;
+            padding: 8px;
             text-align: left;
             border-bottom: 1px solid #dee2e6;
         }
-        
-        th {
-            background-color: #007bff;
-            color: white;
-            font-weight: 600;
-        }
-        
-        tr:last-child td {
-            border-bottom: none;
-        }
+        th { background-color: #f1f3f5; }
+        tr:last-child td { border-bottom: none; }
         
         /* 倒计时专用样式 */
         #status.countdown-active {
@@ -182,7 +159,7 @@
 
         <div id="status"></div>
         <div class="loader" id="loader"></div>
-        <div id="result"></div>
+        <div id="result-container"></div>
     </div>
 
     <script>
@@ -195,20 +172,16 @@
         const webcamVideo = document.getElementById('webcam-video');
         const overlayCanvas = document.getElementById('overlay-canvas');
         const statusDiv = document.getElementById('status');
-        const resultDiv = document.getElementById('result');
+        const resultContainer = document.getElementById('result-container');
         const loader = document.getElementById('loader');
         
-        // 初始化变量
         let mediaRecorder;
         let recordedChunks = [];
         let faceApiLoaded = false;
-        let faceDetected = false;
         let faceDetectionInterval;
-        
-        // 设置录制按钮初始状态为可用
+
         recordButton.disabled = false;
 
-        // --- Tab logic ---
         function showPanel(panelId) {
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
             const activeTab = document.querySelector(`.tab[data-panel="${panelId}"]`);
@@ -227,7 +200,6 @@
             tab.addEventListener('click', () => showPanel(tab.dataset.panel));
         });
 
-        // --- FaceAPI setup ---
         async function loadFaceApi() {
             statusDiv.innerText = '正在加载人脸识别模型...';
             try {
@@ -235,41 +207,20 @@
                 faceApiLoaded = true;
                 statusDiv.innerText = '模型加载完毕。';
             } catch (e) {
-                statusDiv.innerText = '加载人脸识别模型失败。请检查 /static/weights 目录中的文件。';
+                statusDiv.innerText = '加载人脸识别模型失败。';
                 console.error("FaceAPI model loading failed", e);
             }
         }
 
-        // --- Webcam logic ---
         async function startWebcam() {
             if (!faceApiLoaded) await loadFaceApi();
-            if (!faceApiLoaded) return; // Don't proceed if models failed to load
+            if (!faceApiLoaded) return;
             try {
-                // 优化视频约束，优先使用前置摄像头，并设置合适的分辨率
-                const videoConstraints = {
-                    facingMode: 'user', // 优先使用前置摄像头
-                    width: {
-                        ideal: 640,
-                        max: 1280
-                    },
-                    height: {
-                        ideal: 480,
-                        max: 720
-                    }
-                };
-                
-                const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } });
                 webcamVideo.srcObject = stream;
                 webcamVideo.onloadedmetadata = () => {
-                    // 设置canvas尺寸以匹配视频
                     overlayCanvas.width = webcamVideo.videoWidth;
                     overlayCanvas.height = webcamVideo.videoHeight;
-                    
-                    // 响应式设计：移除固定尺寸设置
-                    // 视频和Canvas的尺寸由CSS媒体查询和相对单位自动处理
-                    // 移除所有style.width和style.height设置，让CSS接管布局
-                    
-                    // 确保录制按钮在摄像头启动后仍然可用
                     recordButton.disabled = false;
                     startFaceDetection();
                 };
@@ -291,46 +242,25 @@
 
         function startFaceDetection() {
             faceDetectionInterval = setInterval(async () => {
-                // 配置TinyFaceDetectorOptions，设置低置信度阈值以确保捕捉所有可能的人脸
-                const options = new faceapi.TinyFaceDetectorOptions({
-                    inputSize: 320,
-                    scoreThreshold: 0.0 // 设置最低置信度阈值，确保不过滤任何检测到的人脸
-                });
+                const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.1 });
                 const detections = await faceapi.detectAllFaces(webcamVideo, options);
                 const context = overlayCanvas.getContext('2d');
                 context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-                
-                // 无论是否检测到人脸，都保持录制按钮可用状态
                 if (detections.length > 0) {
-                    faceDetected = true;
-                    // 完全移除状态文本更新，避免干扰倒计时显示
-                    // 只绘制检测框，不更新状态文本
                     faceapi.draw.drawDetections(overlayCanvas, detections);
-                } else {
-                    faceDetected = false;
-                    // 完全移除状态文本更新，避免干扰倒计时显示
                 }
             }, 500);
         }
 
-        // --- Recording logic ---
         recordButton.addEventListener('click', () => {
-            // 移除人脸检测检查，允许用户随时开始录制
             recordButton.disabled = true;
             recordedChunks = [];
             const stream = webcamVideo.srcObject;
-            // 配置录制选项，尝试实现30帧每秒的帧率
-            const options = {
-                mimeType: 'video/webm;codecs=vp9',
-                videoBitsPerSecond: 5000000, // 5Mbps的比特率
-                // 注意：浏览器可能不支持精确控制帧率，但通过高比特率可以提高录制质量
-            };
+            const options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 5000000 };
             mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    recordedChunks.push(event.data);
-                }
+                if (event.data.size > 0) recordedChunks.push(event.data);
             };
 
             mediaRecorder.onstop = () => {
@@ -343,59 +273,26 @@
 
             mediaRecorder.start();
             
-            // 使用更可靠的倒计时实现，确保在手机浏览器上正确显示
-            const duration = 30; // 30秒
+            const duration = 30;
             const startTime = Date.now();
-            
-            // 添加倒计时专用样式类
             statusDiv.classList.add('countdown-active');
-            
             let animationFrameId;
 
             function updateCountdown() {
-                try {
-                    // 计算剩余时间
-                    const elapsed = (Date.now() - startTime) / 1000;
-                    const remaining = Math.max(0, Math.ceil(duration - elapsed));
-                    
-                    // 使用textContent代替innerText以提高兼容性
-                    const newText = `${remaining}s`;
-                    if (statusDiv.textContent !== newText) {
-                        statusDiv.textContent = newText;
-                    }
-                    
-                    // 检查录制状态
-                    if (mediaRecorder && mediaRecorder.state === 'recording' && remaining > 0) {
-                        // 使用requestAnimationFrame来进行下一次更新
-                        animationFrameId = requestAnimationFrame(updateCountdown);
-                    } else {
-                        // 时间到或录制停止
-                        if (animationFrameId) {
-                            cancelAnimationFrame(animationFrameId);
-                        }
-                        statusDiv.classList.remove('countdown-active');
-                        if (mediaRecorder && mediaRecorder.state === 'recording') {
-                            mediaRecorder.stop();
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error in countdown:', e);
-                    if (animationFrameId) {
-                        cancelAnimationFrame(animationFrameId);
-                    }
-                    // 出错时清理
+                const elapsed = (Date.now() - startTime) / 1000;
+                const remaining = Math.max(0, Math.ceil(duration - elapsed));
+                statusDiv.textContent = `${remaining}s`;
+                if (mediaRecorder && mediaRecorder.state === 'recording' && remaining > 0) {
+                    animationFrameId = requestAnimationFrame(updateCountdown);
+                } else {
+                    if (animationFrameId) cancelAnimationFrame(animationFrameId);
                     statusDiv.classList.remove('countdown-active');
-                    if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        mediaRecorder.stop();
-                    }
+                    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
                 }
             }
-            
-            // 启动倒计时更新
             animationFrameId = requestAnimationFrame(updateCountdown);
         });
 
-        // --- Upload logic ---
         uploadButton.addEventListener('click', () => {
             const file = videoFileInput.files[0];
             if (!file) {
@@ -411,28 +308,19 @@
             statusDiv.classList.remove('countdown-active');
             statusDiv.textContent = '正在上传并分析视频...';
             loader.style.display = 'block';
-            resultDiv.textContent = '';
+            resultContainer.innerHTML = '';
 
             try {
-                const response = await fetch('/predict/', {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await fetch('/predict/', { method: 'POST', body: formData });
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.detail || '上传失败。');
                 }
-
                 const data = await response.json();
-                const taskId = data.task_id;
                 statusDiv.textContent = '视频上传成功，正在后台处理...';
-                
-                // Start polling for the result
-                pollTask(taskId);
-
+                pollTask(data.task_id);
             } catch (error) {
-                resultDiv.innerText = `错误：${error.message}`;
+                resultContainer.innerHTML = `<p class="error">错误：${error.message}</p>`;
                 statusDiv.textContent = '处理失败。';
                 loader.style.display = 'none';
                 recordButton.disabled = false;
@@ -442,473 +330,186 @@
         async function pollTask(taskId) {
             try {
                 const response = await fetch(`/task_status/${taskId}`);
-                
-                if (!response.ok) {
-                    // If the server returns a 404 or other error, stop polling
-                    throw new Error('任务状态查询失败。');
-                }
-
+                if (!response.ok) throw new Error('任务状态查询失败。');
                 const data = await response.json();
 
                 if (data.status === 'processing') {
-                    // If still processing, poll again after 3 seconds
                     setTimeout(() => pollTask(taskId), 3000);
                 } else if (data.status === 'completed') {
-                    // If completed, display the result
-                    const result = data.result;
-                    // 准备图表容器
-                    const stressChartId = 'stressChart';
-                    const hrvHealthChartId = 'hrvHealthChart';
-                    
-                    // 确定HRV健康指数的颜色和状态
-                    let hrvHealthColor = getHrvHealthColor(result.hrv_health.index);
-                    let hrvHealthStatus = getHrvHealthStatus(result.hrv_health.index);
-                    
-                    // 确定压力水平的颜色和状态
-                    let stressColor = getStressLevelColor(result.stress.score);
-                    let stressStatus = getStressLevelStatus(result.stress.score);
-                    
-                    let resultHTML = `<h3>检测结果：</h3>
-                                      <p><strong>心率:</strong> ${result.heart_rate} ${result.units.heart_rate}</p>
-                                      <p><strong>呼吸率:</strong> ${result.respiratory_rate} ${result.units.respiratory_rate}</p>
-                                      <p><strong>血氧饱和度 (SpO2):</strong> ${result.spo2} ${result.units.spo2}</p>
-                                      <p><strong>估算血压 (SBP/DBP):</strong> ${result.blood_pressure.sbp}/${result.blood_pressure.dbp} ${result.units.blood_pressure}</p>
-                                      
-                                      <h4>HRV 时域指标:</h4>
-                                      <table>
-                                        <tr><th>指标</th><th>值</th><th>单位</th></tr>
-                                        <tr><td>RMSSD</td><td>${result.hrv_metrics.rmssd}</td><td>${result.units.rmssd}</td></tr>
-                                        <tr><td>SDNN</td><td>${result.hrv_metrics.sdnn}</td><td>${result.units.sdnn}</td></tr>
-                                        <tr><td>pNN50</td><td>${result.hrv_metrics.pnn50}</td><td>%</td></tr>
-                                      </table>
-                                      
-                                      <h4>HRV 频域指标:</h4>
-                                      <table>
-                                        <tr><th>指标</th><th>值</th><th>单位</th></tr>`;
-                    
-                    // 添加频域指标（如果存在）
-                    if (result.hrv_metrics.lf) {
-                        resultHTML += `<tr><td>低频功率 (LF)</td><td>${result.hrv_metrics.lf}</td><td>${result.units.lf || 'ms²'}</td></tr>`;
-                    }
-                    if (result.hrv_metrics.hf) {
-                        resultHTML += `<tr><td>高频功率 (HF)</td><td>${result.hrv_metrics.hf}</td><td>${result.units.hf || 'ms²'}</td></tr>`;
-                    }
-                    if (result.hrv_metrics.lf_hf_ratio) {
-                        resultHTML += `<tr><td>LF/HF 比值</td><td>${result.hrv_metrics.lf_hf_ratio}</td><td>-</td></tr>`;
-                    }
-                    
-                    // 添加CSS样式
-                    const style = document.createElement('style');
-                    style.textContent = `
-                      .result-card {
-                        border: 1px solid #dee2e6;
-                        border-radius: 8px;
-                        padding: 16px;
-                        margin-bottom: 16px;
-                        background-color: #f8f9fa;
-                      }
-                      .result-value {
-                        font-size: 2rem;
-                        font-weight: bold;
-                        text-align: center;
-                        margin-bottom: 8px;
-                      }
-                      .result-range {
-                        text-align: center;
-                        font-size: 1rem;
-                        margin-bottom: 4px;
-                      }
-                      .result-status {
-                        text-align: center;
-                        font-size: 0.9rem;
-                        margin-bottom: 12px;
-                      }
-                      .progress-container {
-                        height: 25px;
-                        background-color: #e9ecef;
-                        border-radius: 12px;
-                        overflow: hidden;
-                        margin-top: 8px;
-                        position: relative;
-                      }
-                    `;
-                    document.head.appendChild(style);
-                    
-                    resultHTML += `</table>
-                                      
-                                      <h4>HRV 健康指数</h4>
-                                      <div class="result-card">
-                                        <div class="result-value" style="color: ${hrvHealthColor};">${result.hrv_health.index}</div>
-                                        <div class="result-range">${result.hrv_health.range}</div>
-                                        <div class="result-status">${hrvHealthStatus}</div>
-                                        <div style="height: 100px; position: relative;">
-                                          <canvas id="${hrvHealthChartId}"></canvas>
-                                        </div>
-                                      </div>
-                                      
-                                      <h4>压力水平</h4>
-                                      <div class="result-card">
-                                        <div class="result-value" style="color: ${stressColor};">${result.stress.score}</div>
-                                        <div class="result-range">${result.stress.range}</div>
-                                        <div class="result-status">${stressStatus}</div>
-                                        <div style="height: 100px; position: relative;">
-                                          <canvas id="${stressChartId}"></canvas>
-                                        </div>
-                                      </div>`;
-                    resultDiv.innerHTML = resultHTML;
+                    displayResults(data.result);
                     statusDiv.textContent = '分析完成。';
                     loader.style.display = 'none';
                     recordButton.disabled = false;
-                    
-                    // 设置区间文本
-                    let hrvRange = '';
-                    if (result.hrv_health.index >= 0 && result.hrv_health.index <= 25) {
-                        hrvRange = '当前区间: 低 (0-25)';
-                    } else if (result.hrv_health.index > 25 && result.hrv_health.index <= 50) {
-                        hrvRange = '当前区间: 中低 (25-50)';
-                    } else if (result.hrv_health.index > 50 && result.hrv_health.index <= 75) {
-                        hrvRange = '当前区间: 良好 (50-75)';
-                    } else if (result.hrv_health.index > 75 && result.hrv_health.index <= 100) {
-                        hrvRange = '当前区间: 优秀 (75-100)';
-                    }
-                    
-                    let stressRange = '';
-                    if (result.stress.score >= 0 && result.stress.score <= 25) {
-                        stressRange = '当前区间: 低压力 (0-25)';
-                    } else if (result.stress.score > 25 && result.stress.score <= 50) {
-                        stressRange = '当前区间: 轻度压力 (25-50)';
-                    } else if (result.stress.score > 50 && result.stress.score <= 75) {
-                        stressRange = '当前区间: 中度压力 (50-75)';
-                    } else if (result.stress.score > 75 && result.stress.score <= 100) {
-                        stressRange = '当前区间: 高压力 (75-100)';
-                    }
-                    
-                    // 更新结果HTML，添加区间信息
-                    const hrvCard = resultDiv.querySelector('.result-card:nth-child(1)');
-                    const stressCard = resultDiv.querySelector('.result-card:nth-child(2)');
-                    
-                    if (hrvCard) {
-                        const hrvRangeElement = document.createElement('div');
-                        hrvRangeElement.className = 'text-center mt-2 text-muted';
-                        hrvRangeElement.textContent = hrvRange;
-                        hrvCard.appendChild(hrvRangeElement);
-                    }
-                    
-                    if (stressCard) {
-                        const stressRangeElement = document.createElement('div');
-                        stressRangeElement.className = 'text-center mt-2 text-muted';
-                        stressRangeElement.textContent = stressRange;
-                        stressCard.appendChild(stressRangeElement);
-                    }
-                    
-                    // 创建HRV健康指数图表
-                    createHrvHealthChart(hrvHealthChartId, result.hrv_health.index);
-                    
-                    // 创建压力水平图表
-                    createStressLevelChart(stressChartId, result.stress.score);
                 } else if (data.status === 'error') {
-                    // If there was an error, show the error message
                     throw new Error(data.detail || '处理过程中发生未知错误。');
                 }
-
             } catch (error) {
-                resultDiv.innerText = `错误：${error.message}`;
+                resultContainer.innerHTML = `<p class="error">错误：${error.message}</p>`;
                 statusDiv.textContent = '处理失败。';
                 loader.style.display = 'none';
                 recordButton.disabled = false;
             }
         }
 
-        // HRV健康指数辅助函数
-        function getHrvHealthColor(index) {
-            if (index >= 0 && index <= 25) return '#dc3545'; // 低 - 红色
-            if (index > 25 && index <= 50) return '#ffc107'; // 中低 - 黄色
-            if (index > 50 && index <= 75) return '#28a745'; // 良好 - 绿色
-            if (index > 75 && index <= 100) return '#007bff'; // 优秀 - 蓝色
-            return '#6c757d'; // 未知 - 灰色
+        function displayResults(result) {
+            resultContainer.innerHTML = `
+                <h3>核心生理指标</h3>
+                <div class="metrics-grid">
+                    <div class="result-card">
+                        <div class="metric-title">心率 (HR)</div>
+                        <div class="chart-container"><canvas id="hrChart"></canvas></div>
+                    </div>
+                    <div class="result-card">
+                        <div class="metric-title">呼吸率 (BR)</div>
+                        <div class="chart-container"><canvas id="rrChart"></canvas></div>
+                    </div>
+                    <div class="result-card">
+                        <div class="metric-title">血氧饱和度 (SpO2)</div>
+                        <div class="chart-container"><canvas id="spo2Chart"></canvas></div>
+                    </div>
+                    <div class="result-card">
+                        <div class="metric-title">估算血压 (BP)</div>
+                        <div class="chart-container"><canvas id="bpChart"></canvas></div>
+                    </div>
+                </div>
+
+                <h3>详细分析</h3>
+                <div class="details-grid">
+                    <div class="result-card">
+                        <div class="metric-title">HRV 时域指标</div>
+                        <table>
+                            <tr><th>指标</th><th>值</th><th>单位</th></tr>
+                            <tr><td>RMSSD</td><td>${result.hrv_metrics.rmssd}</td><td>${result.units.rmssd}</td></tr>
+                            <tr><td>SDNN</td><td>${result.hrv_metrics.sdnn}</td><td>${result.units.sdnn}</td></tr>
+                            <tr><td>pNN50</td><td>${result.hrv_metrics.pnn50}</td><td>%</td></tr>
+                        </table>
+                    </div>
+                    <div class="result-card">
+                        <div class="metric-title">HRV 频域指标</div>
+                        <table>
+                            <tr><th>指标</th><th>值</th><th>单位</th></tr>
+                            <tr><td>低频功率 (LF)</td><td>${result.hrv_metrics.lf}</td><td>${result.units.lf || 'ms²'}</td></tr>
+                            <tr><td>高频功率 (HF)</td><td>${result.hrv_metrics.hf}</td><td>${result.units.hf || 'ms²'}</td></tr>
+                            <tr><td>LF/HF 比值</td><td>${result.hrv_metrics.lf_hf_ratio}</td><td>-</td></tr>
+                        </table>
+                    </div>
+                    <div class="result-card">
+                        <div class="metric-title">HRV 健康指数</div>
+                        <div class="chart-container"><canvas id="hrvHealthChart"></canvas></div>
+                    </div>
+                    <div class="result-card">
+                        <div class="metric-title">压力水平</div>
+                        <div class="chart-container"><canvas id="stressChart"></canvas></div>
+                    </div>
+                </div>
+            `;
+
+            // Create charts
+            createMetricChart('hrChart', '心率', result.heart_rate, result.units.heart_rate, [40, 60, 100, 160], ['过缓', '正常', '过快']);
+            createMetricChart('rrChart', '呼吸率', result.respiratory_rate, result.units.respiratory_rate, [8, 12, 20, 30], ['过缓', '正常', '过快']);
+            createMetricChart('spo2Chart', '血氧饱和度', result.spo2, result.units.spo2, [90, 94, 100, 100], ['偏低', '正常', '正常']);
+            createBloodPressureChart('bpChart', result.blood_pressure.sbp, result.blood_pressure.dbp, result.units.blood_pressure);
+            createHrvHealthChart('hrvHealthChart', result.hrv_health.index);
+            createStressLevelChart('stressChart', result.stress.score);
+        }
+
+        function createMetricChart(canvasId, label, value, unit, thresholds, labels) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const [min, low, high, max] = thresholds;
+            const [lowLabel, normalLabel, highLabel] = labels;
+
+            let status = normalLabel;
+            let color = '#28a745'; // Green for normal
+            if (value < low) {
+                status = lowLabel;
+                color = '#ffc107'; // Yellow for low
+            }
+            if (value > high) {
+                status = highLabel;
+                color = '#dc3545'; // Red for high
+            }
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [label],
+                    datasets: [
+                        {
+                            label: '当前值',
+                            data: [value],
+                            backgroundColor: [color],
+                            borderColor: [color],
+                            borderWidth: 1,
+                            barThickness: 30,
+                            z: 2
+                        },
+                        {
+                            label: '范围',
+                            data: [max],
+                            backgroundColor: ['#e9ecef'],
+                            barThickness: 30,
+                            z: 1
+                        }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { min: min, max: max, stacked: false, display: true, ticks: { autoSkip: false } }, 
+                        y: { stacked: true, display: false } 
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, text: `${value} ${unit} (${status})`, font: { size: 16 } },
+                        tooltip: { enabled: true }
+                    }
+                }
+            });
         }
         
-        function getHrvHealthStatus(index) {
-            if (index >= 0 && index <= 25) return '低';
-            if (index > 25 && index <= 50) return '中低';
-            if (index > 50 && index <= 75) return '良好';
-            if (index > 75 && index <= 100) return '优秀';
-            return '未知';
+        function createBloodPressureChart(canvasId, sbp, dbp, unit) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['收缩压 (SBP)', '舒张压 (DBP)'],
+                    datasets: [{
+                        label: '血压',
+                        data: [sbp, dbp],
+                        backgroundColor: [
+                            (sbp < 90 || sbp > 140) ? '#ffc107' : '#28a745',
+                            (dbp < 60 || dbp > 90) ? '#ffc107' : '#28a745'
+                        ],
+                        barThickness: 25
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { x: { beginAtZero: true, max: 180 } },
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, text: `${sbp} / ${dbp} ${unit}`, font: { size: 16 } }
+                    }
+                }
+            });
         }
-        
+
         function createHrvHealthChart(canvasId, value) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            
-            // 确定当前值所在区间
-            let currentRange = '';
-            let rangeStart = 0;
-            let rangeEnd = 0;
-            let currentColor = getHrvHealthColor(value);
-            
-            if (value >= 0 && value <= 25) {
-                currentRange = '低';
-                rangeStart = 0;
-                rangeEnd = 25;
-            } else if (value > 25 && value <= 50) {
-                currentRange = '中低';
-                rangeStart = 25;
-                rangeEnd = 50;
-            } else if (value > 50 && value <= 75) {
-                currentRange = '良好';
-                rangeStart = 50;
-                rangeEnd = 75;
-            } else if (value > 75 && value <= 100) {
-                currentRange = '优秀';
-                rangeStart = 75;
-                rangeEnd = 100;
-            }
-            
-            // 创建水平进度条图表
-            const chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['HRV健康指数'],
-                    datasets: [
-                        // 背景区间条（显示所有区间）
-                        {
-                            label: '背景',
-                            data: [100],
-                            backgroundColor: '#e9ecef',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'background'
-                        },
-                        // 低区间 (0-25)
-                        {
-                            label: '低',
-                            data: [value > 25 ? 25 : value],
-                            backgroundColor: '#dc3545',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        },
-                        // 中低区间 (25-50)
-                        {
-                            label: '中低',
-                            data: [value > 25 && value <= 50 ? value - 25 : (value > 50 ? 25 : 0)],
-                            backgroundColor: '#ffc107',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        },
-                        // 良好区间 (50-75)
-                        {
-                            label: '良好',
-                            data: [value > 50 && value <= 75 ? value - 50 : (value > 75 ? 25 : 0)],
-                            backgroundColor: '#28a745',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        },
-                        // 优秀区间 (75-100)
-                        {
-                            label: '优秀',
-                            data: [value > 75 ? value - 75 : 0],
-                            backgroundColor: '#007bff',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        }
-                    ]
-                },
-                options: {
-                    indexAxis: 'y',  // 水平条形图
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: {
-                                    callback: function(value) {
-                                        return value;
-                                    }
-                                },
-                            grid: {
-                                display: false
-                            }
-                        },
-                        y: {
-                            display: false
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                title: function() {
-                                    return `HRV健康指数: ${value}`;
-                                },
-                                label: function(context) {
-                                    if (context.datasetIndex === 0) {
-                                        return `当前区间: ${currentRange} (${rangeStart}-${rangeEnd})`;
-                                    }
-                                    return `${context.dataset.label}: ${context.raw}`;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-            return chart;
+            createMetricChart(canvasId, 'HRV健康指数', value, '', [0, 25, 75, 100], ['低', '中等', '优秀']);
         }
-        
-        // 压力水平辅助函数
-        function getStressLevelColor(score) {
-            if (score >= 0 && score <= 25) return '#007bff'; // 低压力 - 蓝色
-            if (score > 25 && score <= 50) return '#28a745'; // 轻度压力 - 绿色
-            if (score > 50 && score <= 75) return '#ffc107'; // 中度压力 - 黄色
-            if (score > 75 && score <= 100) return '#dc3545'; // 高压力 - 红色
-            return '#6c757d'; // 未知 - 灰色
-        }
-        
-        function getStressLevelStatus(score) {
-            if (score >= 0 && score <= 25) return '低压力';
-            if (score > 25 && score <= 50) return '轻度压力';
-            if (score > 50 && score <= 75) return '中度压力';
-            if (score > 75 && score <= 100) return '高压力';
-            return '未知';
-        }
-        
+
         function createStressLevelChart(canvasId, value) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            
-            // 确定当前值所在区间
-            let currentRange = '';
-            let rangeStart = 0;
-            let rangeEnd = 0;
-            let currentColor = getStressLevelColor(value);
-            
-            if (value >= 0 && value <= 25) {
-                currentRange = '低压力';
-                rangeStart = 0;
-                rangeEnd = 25;
-            } else if (value > 25 && value <= 50) {
-                currentRange = '轻度压力';
-                rangeStart = 25;
-                rangeEnd = 50;
-            } else if (value > 50 && value <= 75) {
-                currentRange = '中度压力';
-                rangeStart = 50;
-                rangeEnd = 75;
-            } else if (value > 75 && value <= 100) {
-                currentRange = '高压力';
-                rangeStart = 75;
-                rangeEnd = 100;
-            }
-            
-            // 创建水平进度条图表
-            const chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['压力水平'],
-                    datasets: [
-                        // 背景区间条（显示所有区间）
-                        {
-                            label: '背景',
-                            data: [100],
-                            backgroundColor: '#e9ecef',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'background'
-                        },
-                        // 低压力区间 (0-25)
-                        {
-                            label: '低压力',
-                            data: [value > 25 ? 25 : value],
-                            backgroundColor: '#007bff',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        },
-                        // 轻度压力区间 (25-50)
-                        {
-                            label: '轻度压力',
-                            data: [value > 25 && value <= 50 ? value - 25 : (value > 50 ? 25 : 0)],
-                            backgroundColor: '#28a745',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        },
-                        // 中度压力区间 (50-75)
-                        {
-                            label: '中度压力',
-                            data: [value > 50 && value <= 75 ? value - 50 : (value > 75 ? 25 : 0)],
-                            backgroundColor: '#ffc107',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        },
-                        // 高压力区间 (75-100)
-                        {
-                            label: '高压力',
-                            data: [value > 75 ? value - 75 : 0],
-                            backgroundColor: '#dc3545',
-                            barPercentage: 0.6,
-                            categoryPercentage: 0.8,
-                            stack: 'value'
-                        }
-                    ]
-                },
-                options: {
-                    indexAxis: 'y',  // 水平条形图
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: {
-                                    callback: function(value) {
-                                        return value;
-                                    }
-                                },
-                            grid: {
-                                display: false
-                            }
-                        },
-                        y: {
-                            display: false
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                title: function() {
-                                    return `压力水平: ${value}`;
-                                },
-                                label: function(context) {
-                                    if (context.datasetIndex === 0) {
-                                        return `当前区间: ${currentRange} (${rangeStart}-${rangeEnd})`;
-                                    }
-                                    return `${context.dataset.label}: ${context.raw}`;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-            return chart;
+            createMetricChart(canvasId, '压力水平', value, '', [0, 25, 75, 100], ['低', '中等', '高']);
         }
-        
-        // Initialize
-        const webcamTab = document.querySelector('.tab[data-panel="webcam"]');
+
         if (!allowWebcamFeature) {
-            if (webcamTab) {
-                webcamTab.style.display = 'none';
-            }
+            const webcamTab = document.querySelector('.tab[data-panel="webcam"]');
+            if (webcamTab) webcamTab.style.display = 'none';
         }
-        showPanel('upload'); // 默认显示上传面板
+        showPanel('upload');
     });
     </script>
 </body>
