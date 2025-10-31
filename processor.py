@@ -17,7 +17,7 @@ from utils import moving_avg
 # from utils import *
 
 
-FRAME_SUBSAMPLE_RATE = 5
+
 
 
 # --------------------------------
@@ -305,15 +305,19 @@ class HeartRateProcessor:
         """
         Processes a video file to extract heart rate and HRV metrics.
         """
+        frame_subsample_rate = 5
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise IOError(f"Cannot open video file {video_path}")
 
         video_fs = cap.get(cv2.CAP_PROP_FPS)
+        print(f"视频帧率: {video_fs} fps")
         if video_fs <= 0 or video_fs > 100:
             video_fs = 30.0
             print("检测到异常帧率，已修正为30fps")
-        effective_fs = video_fs / FRAME_SUBSAMPLE_RATE
+        if video_fs < 15:
+            frame_subsample_rate = 1
+        effective_fs = video_fs / frame_subsample_rate
 
         rgb_means = []
         frame_count = 0
@@ -323,7 +327,7 @@ class HeartRateProcessor:
             if not grabbed:
                 break
 
-            if frame_count % FRAME_SUBSAMPLE_RATE == 0:
+            if frame_count % frame_subsample_rate == 0:
                 orig_shape = frame.shape[0:2]
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 img_pil = Image.fromarray(frame_rgb)
