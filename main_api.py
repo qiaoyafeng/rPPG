@@ -46,34 +46,29 @@ def run_video_processing(task_id: str, video_path: str):
             tasks[task_id] = {"status": "error", "detail": result["error"]}
             return
 
-        result_data = {
-            "heart_rate": int(result["heart_rate"]),
-            "hrv_metrics": {
-                "rmssd": round(result["hrv_metrics"]["rmssd"], 2),
-                "sdnn": round(result["hrv_metrics"]["sdnn"], 2),
-                "pnn50": round(result["hrv_metrics"]["pnn50"], 2),
-                "lf": round(result["hrv_metrics"]["lf"], 2),
-                "hf": round(result["hrv_metrics"]["hf"], 2),
-                "lf_hf_ratio": round(result["hrv_metrics"]["lf_hf_ratio"], 2)
-            },
-            "hrv_health": {
-                "index": int(result["hrv_health"]["index"]),
-                "range": result["hrv_health"]["range"],
-            },
-            "stress": {
-                "score": int(result["stress"]["score"]),
-                "range": result["stress"]["range"],
-            },
-            "units": {
-                "heart_rate": "bpm", 
-                "rmssd": "ms", 
-                "sdnn": "ms",
-                "pnn50": "%",
-                "lf": "ms²",
-                "hf": "ms²",
-                "lf_hf_ratio": "-"
-            }
-        }
+        # 直接使用 processor 返回的结果，并进行必要的类型转换和清理
+        result_data = result
+        result_data['heart_rate'] = int(result.get('heart_rate', 0))
+        result_data['respiratory_rate'] = int(result.get('respiratory_rate', 0))
+        if 'hrv_health' in result_data and 'index' in result_data['hrv_health']:
+            result_data['hrv_health']['index'] = int(result_data['hrv_health']['index'])
+        if 'stress' in result_data and 'score' in result_data['stress']:
+            result_data['stress']['score'] = int(result_data['stress']['score'])
+
+        # 确保新添加的字段存在
+        if 'spo2' not in result_data:
+            result_data['spo2'] = 0
+        if 'blood_pressure' not in result_data:
+            result_data['blood_pressure'] = {'sbp': 0, 'dbp': 0}
+        
+        # 确保单位字段也包含新单位
+        if 'units' not in result_data:
+            result_data['units'] = {}
+        result_data['units'].update({
+            'spo2': '%',
+            'blood_pressure': 'mmHg'
+        })
+
 
         result_filepath = os.path.join(RESULTS_DIR, f"{task_id}.json")
         with open(result_filepath, 'w') as f:

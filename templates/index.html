@@ -470,6 +470,9 @@
                     
                     let resultHTML = `<h3>检测结果：</h3>
                                       <p><strong>心率:</strong> ${result.heart_rate} ${result.units.heart_rate}</p>
+                                      <p><strong>呼吸率:</strong> ${result.respiratory_rate} ${result.units.respiratory_rate}</p>
+                                      <p><strong>血氧饱和度 (SpO2):</strong> ${result.spo2} ${result.units.spo2}</p>
+                                      <p><strong>估算血压 (SBP/DBP):</strong> ${result.blood_pressure.sbp}/${result.blood_pressure.dbp} ${result.units.blood_pressure}</p>
                                       
                                       <h4>HRV 时域指标:</h4>
                                       <table>

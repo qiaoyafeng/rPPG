@@ -31,8 +31,9 @@ def calculate_hrv_metrics(pulse_signal: np.ndarray, fs: float) -> Dict[str, floa
     Returns:
         Dictionary containing HRV metrics
     """
-    # 计算R波峰值位置
-    peaks, _ = find_peaks(pulse_signal, distance=fs / 2)
+    # 1. 改进波峰检测：增加 prominence 参数，使其对噪声不那么敏感
+    # prominence值是根据信号的振幅动态设置的，这里使用信号标准差的一半作为参考
+    peaks, _ = find_peaks(pulse_signal, distance=fs / 2, prominence=np.std(pulse_signal) / 2)
     
     # 初始化结果字典，包含所有指标的默认值
     result = {
@@ -45,16 +46,26 @@ def calculate_hrv_metrics(pulse_signal: np.ndarray, fs: float) -> Dict[str, floa
     }
     
     # 如果峰值太少，返回默认值
-    if len(peaks) < 2:
+    if len(peaks) < 5: # 需要更多的峰值来获得可靠的HRV
         return result
     
     # 计算NN间隔（以毫秒为单位）
     rr_intervals = np.diff(peaks) / fs  # in seconds
     nn_intervals = rr_intervals * 1000  # in ms
     
-    if len(nn_intervals) < 2:
+    if len(nn_intervals) < 4:
+        return result
+
+    # 2. 优化离群点剔除算法：使用基于中位数的更稳健的方法
+    median_nn = np.median(nn_intervals)
+    # 只保留与中位数差异在35%以内的NN间期
+    nn_intervals_cleaned = nn_intervals[np.abs(nn_intervals - median_nn) < 0.35 * median_nn]
+
+    if len(nn_intervals_cleaned) < 4:
         return result
     
+    nn_intervals = nn_intervals_cleaned
+
     # 时域HRV指标
     rmssd = np.sqrt(np.mean(np.square(np.diff(nn_intervals))))  # Root Mean Square of Successive Differences
     sdnn = np.std(nn_intervals)  # Standard Deviation of NN intervals
@@ -236,6 +247,39 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     return {"index": health_index, "range": health_range}
 
 
+def calculate_respiratory_rate(pulse_signal: np.ndarray, fs: float) -> float:
+    """
+    Calculates the respiratory rate from the pulse signal.
+    Args:
+        pulse_signal: The pulse signal.
+        fs: Sampling frequency of the signal.
+    Returns:
+        Respiratory rate in breaths per minute.
+    """
+    try:
+        # Define the respiratory frequency band (in Hz)
+        resp_band = [0.1, 0.5]
+        
+        # Use Welch's method to get the power spectral density
+        fxx, pxx = welch(pulse_signal, fs=fs, nperseg=len(pulse_signal))
+        
+        # Find the frequency with the maximum power in the respiratory band
+        resp_indices = np.where((fxx >= resp_band[0]) & (fxx <= resp_band[1]))
+        if len(resp_indices[0]) == 0:
+            return 0.0
+
+        max_power_idx = resp_indices[0][np.argmax(pxx[resp_indices])]
+        respiratory_freq = fxx[max_power_idx]
+        
+        # Convert frequency to breaths per minute
+        respiratory_rate = respiratory_freq * 60
+        
+        return round(respiratory_rate, 1)
+    except Exception as e:
+        print(f"Error calculating respiratory rate: {e}")
+        return 0.0
+
+
 def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     """
     Estimates stress level based on both time domain and frequency domain HRV metrics.
@@ -362,20 +406,28 @@ class HeartRateProcessor:
 
         pulse_calculator = Pulse(framerate=effective_fs, signal_size=signal_size, batch_size=30)
         pulse_signal = pulse_calculator.get_pulse(rgb_signal)
-        pulse_signal = moving_avg(pulse_signal, 6)
 
         hr = pulse_calculator.get_rfft_hr(pulse_signal)
         hrv_metrics = calculate_hrv_metrics(pulse_signal, video_fs)
         hrv_health = calculate_hrv_health_index(hrv_metrics)
         stress = get_stress_level(hrv_metrics)
+        respiratory_rate = calculate_respiratory_rate(pulse_signal, effective_fs)
+        spo2 = estimate_spo2(rgb_signal)
+        blood_pressure = estimate_bp(pulse_signal, hr)
 
         return {
             "heart_rate": hr,
+            "respiratory_rate": respiratory_rate,
+            "spo2": spo2,
+            "blood_pressure": blood_pressure,
             "hrv_metrics": hrv_metrics,
             "hrv_health": hrv_health,
             "stress": stress,
             "units": {
                 "heart_rate": "bpm",
+                "respiratory_rate": "brpm",
+                "spo2": "%",
+                "blood_pressure": "mmHg",
                 "rmssd": "ms",
                 "sdnn": "ms",
                 "pnn50": "%",
@@ -384,6 +436,73 @@ class HeartRateProcessor:
                 "lf_hf_ratio": "-"
             }
         }
+
+
+def estimate_spo2(rgb_signal: np.ndarray) -> float:
+    """
+    Estimates SpO2 from the RGB signal based on the ratio of AC/DC components of red and blue channels.
+    This is a model-based estimation and is not medically accurate.
+    """
+    try:
+        red_channel = rgb_signal[:, 0]
+        blue_channel = rgb_signal[:, 2]
+
+        # Calculate AC/DC components
+        ac_red = np.std(red_channel)
+        dc_red = np.mean(red_channel)
+        ac_blue = np.std(blue_channel)
+        dc_blue = np.mean(blue_channel)
+
+        # Avoid division by zero
+        if dc_red == 0 or dc_blue == 0:
+            return 0.0
+
+        # Ratio of ratios (a common model for SpO2 estimation from RGB)
+        ratio = (ac_red / dc_red) / (ac_blue / dc_blue)
+
+        # Coefficients from academic models (these are empirical and can be tuned)
+        # SpO2 = A - B * ratio
+        A = 104.0
+        B = 17.0
+        
+        spo2_est = A - B * ratio
+        
+        # Clamp the result to a realistic range (e.g., 90-100%)
+        return round(max(90.0, min(99.9, spo2_est)), 1)
+    except Exception as e:
+        print(f"Error calculating SpO2: {e}")
+        return 0.0
+
+
+def estimate_bp(pulse_signal: np.ndarray, heart_rate: float) -> Dict[str, int]:
+    """
+    Estimates Systolic (SBP) and Diastolic (DBP) blood pressure based on pulse wave features.
+    This is a highly simplified, non-medical estimation.
+    """
+    try:
+        # Basic pulse wave analysis features
+        pulse_amplitude = np.max(pulse_signal) - np.min(pulse_signal)
+        
+        # These coefficients are purely illustrative and derived from general observations in some studies.
+        # They do NOT provide accurate BP readings.
+        # A simple linear model: BP = c0 + c1*HR + c2*Pulse_Amplitude
+        
+        # Coefficients for SBP
+        c0_sbp, c1_sbp, c2_sbp = 60, 0.6, 0.1
+        sbp = c0_sbp + c1_sbp * heart_rate + c2_sbp * pulse_amplitude
+        
+        # Coefficients for DBP
+        c0_dbp, c1_dbp, c2_dbp = 40, 0.4, 0.05
+        dbp = c0_dbp + c1_dbp * heart_rate + c2_dbp * pulse_amplitude
+
+        # Clamp to a plausible physiological range
+        sbp = int(max(90, min(160, sbp)))
+        dbp = int(max(60, min(100, dbp)))
+
+        return {"sbp": sbp, "dbp": dbp}
+    except Exception as e:
+        print(f"Error calculating Blood Pressure: {e}")
+        return {"sbp": 0, "dbp": 0}
 
 
 # This function is now deprecated, but kept for reference or if needed elsewhere.
