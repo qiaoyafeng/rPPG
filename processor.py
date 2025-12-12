@@ -243,8 +243,8 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
         health_range = "Fair"
     else:
         health_range = "Poor"
-
-    return {"index": health_index, "range": health_range}
+    desc = f"说明：此为基于HRV等数据通过算法估算的相对参考值，一般而言，在同等条件下，数值越高反映身体恢复及适应能力越好。其绝对值受年龄、设备与算法影响显著，因此不同设备的读数不宜直接比较。"
+    return {"index": health_index, "range": health_range, "desc": desc, "min": 0, "max": 100}
 
 
 def calculate_respiratory_rate(pulse_signal: np.ndarray, fs: float) -> float:
@@ -316,7 +316,9 @@ def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     else:
         stress_range = "Low"
 
-    return {"score": stress_score, "range": stress_range}
+    desc = f"说明：此为基于心率、HRV等数据通过算法估算的相对参考值，主要用于追踪自身压力的长期趋势，不同品牌设备的分数不具备直接可比性。"
+
+    return {"score": stress_score, "range": stress_range, "desc": desc, "min": 0, "max": 100}
 
 
 class HeartRateProcessor:
