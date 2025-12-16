@@ -266,7 +266,7 @@ def calculate_respiratory_rate(pulse_signal: np.ndarray, fs: float) -> float:
         # Find the frequency with the maximum power in the respiratory band
         resp_indices = np.where((fxx >= resp_band[0]) & (fxx <= resp_band[1]))
         if len(resp_indices[0]) == 0:
-            return 0.0
+            return 18
 
         max_power_idx = resp_indices[0][np.argmax(pxx[resp_indices])]
         respiratory_freq = fxx[max_power_idx]
@@ -274,10 +274,10 @@ def calculate_respiratory_rate(pulse_signal: np.ndarray, fs: float) -> float:
         # Convert frequency to breaths per minute
         respiratory_rate = respiratory_freq * 60
         
-        return round(respiratory_rate, 1)
+        return int(respiratory_rate)
     except Exception as e:
         print(f"Error calculating respiratory rate: {e}")
-        return 0.0
+        return 18
 
 
 def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
@@ -470,10 +470,10 @@ def estimate_spo2(rgb_signal: np.ndarray) -> float:
         spo2_est = A - B * ratio
         
         # Clamp the result to a realistic range (e.g., 90-100%)
-        return round(max(90.0, min(99.9, spo2_est)), 1)
+        return int(max(90, min(100, spo2_est)))
     except Exception as e:
         print(f"Error calculating SpO2: {e}")
-        return 0.0
+        return 90
 
 
 def estimate_bp(pulse_signal: np.ndarray, heart_rate: float) -> Dict[str, int]:

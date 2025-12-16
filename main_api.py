@@ -48,31 +48,9 @@ def run_video_processing(task_id: str, video_path: str):
 
         # 直接使用 processor 返回的结果，并进行必要的类型转换和清理
         result_data = result
-        result_data['heart_rate'] = int(result.get('heart_rate', 0))
-        result_data['respiratory_rate'] = int(result.get('respiratory_rate', 0))
-        if 'hrv_health' in result_data and 'index' in result_data['hrv_health']:
-            result_data['hrv_health']['index'] = int(result_data['hrv_health']['index'])
-        if 'stress' in result_data and 'score' in result_data['stress']:
-            result_data['stress']['score'] = int(result_data['stress']['score'])
-
-        # 确保新添加的字段存在
-        if 'spo2' not in result_data:
-            result_data['spo2'] = 0
-        if 'blood_pressure' not in result_data:
-            result_data['blood_pressure'] = {'sbp': 0, 'dbp': 0}
-        
-        # 确保单位字段也包含新单位
-        if 'units' not in result_data:
-            result_data['units'] = {}
-        result_data['units'].update({
-            'spo2': '%',
-            'blood_pressure': 'mmHg'
-        })
-
-
         result_filepath = os.path.join(RESULTS_DIR, f"{task_id}.json")
-        with open(result_filepath, 'w') as f:
-            json.dump(result_data, f)
+        with open(result_filepath, 'w', encoding='utf-8') as f:
+            json.dump(result_data, f, ensure_ascii=False, indent=4)
 
         tasks[task_id] = {"status": "completed", "result_path": result_filepath}
 
@@ -118,7 +96,7 @@ async def get_task_status(task_id: str):
     if task["status"] == "completed":
         result_path = task.get("result_path")
         if result_path and os.path.exists(result_path):
-            with open(result_path, 'r') as f:
+            with open(result_path, 'r', encoding='utf-8') as f:
                 result = json.load(f)
             return {"status": "completed", "result": result}
         else:
