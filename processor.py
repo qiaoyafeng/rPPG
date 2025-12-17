@@ -236,18 +236,36 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     health_index = int(max(1.0, min(99.0, health_index)))
 
     if health_index >= 75:
-        health_range = "good"
+        health_range_en = "good"
+        health_range_cn = "良好"
     elif health_index >= 25:
-        health_range = "fair"
+        health_range_en = "fair"
+        health_range_cn = "一般"
     else:
-        health_range = "poor"
+        health_range_en = "poor"
+        health_range_cn = "差"
     desc = f"说明：此为基于HRV等数据通过算法估算的相对参考值，一般而言，在同等条件下，数值越高反映身体恢复及适应能力越好。其绝对值受年龄、设备与算法影响显著，因此不同设备的读数不宜直接比较。"
-    ranges = {
-        "poor": [0, 24],
-        "fair": [25, 74],
-        "good": [75, 100]
-    }
-    return {"index": health_index, "range": health_range, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
+    ranges = [
+        {
+            "min": 0,
+            "max": 24,
+            "label_cn": "差",
+            "label_en": "poor"
+        },
+        {
+            "min": 25,
+            "max": 74,
+            "label_cn": "一般",
+            "label_en": "fair"
+        },
+        {
+            "min": 75,
+            "max": 100,
+            "label_cn": "良好",
+            "label_en": "good"
+        }
+    ]
+    return {"index": health_index, "range_en": health_range_en, "range_cn": health_range_cn, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
 
 
 def calculate_respiratory_rate(pulse_signal: np.ndarray, fs: float) -> float:
@@ -313,21 +331,39 @@ def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     stress_score = int(max(1.0, min(99.0, stress_score)))
 
     if stress_score >= 75:
-        stress_range = "high"
+        stress_range_en = "high"
+        stress_range_cn = "高"
     elif stress_score >= 25:
-        stress_range = "medium"
+        stress_range_en = "medium"
+        stress_range_cn = "中"
     else:
-        stress_range = "low"
+        stress_range_en = "low"
+        stress_range_cn = "低"
 
     desc = f"说明：此为基于心率、HRV等数据通过算法估算的相对参考值，主要用于追踪自身压力的长期趋势，不同品牌设备的分数不具备直接可比性。"
 
-    ranges = {
-        "low": [0, 24],
-        "medium": [25, 74],
-        "high": [75, 100]
-    }
+    ranges = [
+        {
+            "min": 0,
+            "max": 24,
+            "label_cn": "低",
+            "label_en": "low"
+        },
+        {
+            "min": 25,
+            "max": 74,
+            "label_cn": "中",
+            "label_en": "medium"
+        },
+        {
+            "min": 75,
+            "max": 100,
+            "label_cn": "高",
+            "label_en": "high"
+        }
+    ]
 
-    return {"score": stress_score, "range": stress_range, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
+    return {"score": stress_score, "range_en": stress_range_en, "range_cn": stress_range_cn, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
 
 
 class HeartRateProcessor:
