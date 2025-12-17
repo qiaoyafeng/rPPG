@@ -235,16 +235,19 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     # 使用1-99范围确保不会有0或100的极端值
     health_index = int(max(1.0, min(99.0, health_index)))
 
-    if health_index > 80:
-        health_range = "Excellent"
-    elif health_index > 60:
-        health_range = "Good"
-    elif health_index > 40:
-        health_range = "Fair"
+    if health_index >= 75:
+        health_range = "优秀"
+    elif health_index >= 25:
+        health_range = "中等"
     else:
-        health_range = "Poor"
+        health_range = "低"
     desc = f"说明：此为基于HRV等数据通过算法估算的相对参考值，一般而言，在同等条件下，数值越高反映身体恢复及适应能力越好。其绝对值受年龄、设备与算法影响显著，因此不同设备的读数不宜直接比较。"
-    return {"index": health_index, "range": health_range, "desc": desc, "min": 0, "max": 100}
+    ranges = {
+        "低": [0, 24],
+        "中等": [25, 74],
+        "优秀": [75, 100]
+    }
+    return {"index": health_index, "range": health_range, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
 
 
 def calculate_respiratory_rate(pulse_signal: np.ndarray, fs: float) -> float:
@@ -309,16 +312,22 @@ def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     # 使用1-99范围确保不会有0或100的极端值
     stress_score = int(max(1.0, min(99.0, stress_score)))
 
-    if stress_score > 70:
-        stress_range = "High"
-    elif stress_score > 40:
-        stress_range = "Medium"
+    if stress_score >= 75:
+        stress_range = "高"
+    elif stress_score >= 25:
+        stress_range = "中等"
     else:
-        stress_range = "Low"
+        stress_range = "低"
 
     desc = f"说明：此为基于心率、HRV等数据通过算法估算的相对参考值，主要用于追踪自身压力的长期趋势，不同品牌设备的分数不具备直接可比性。"
 
-    return {"score": stress_score, "range": stress_range, "desc": desc, "min": 0, "max": 100}
+    ranges = {
+        "低": [0, 24],
+        "中等": [25, 74],
+        "高": [75, 100]
+    }
+
+    return {"score": stress_score, "range": stress_range, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
 
 
 class HeartRateProcessor:

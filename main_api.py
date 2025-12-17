@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 import uuid
 import json
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, BackgroundTasks
@@ -41,7 +42,11 @@ def run_video_processing(task_id: str, video_path: str):
     A background task to process the video, save results, and update task status.
     """
     try:
+        start_time = time.time()
         result = processor.process(video_path)
+        end_time = time.time()
+        processing_time = end_time - start_time
+        print(f"任务 {task_id} 处理时间: {processing_time:.4f} 秒")
 
         if "error" in result:
             tasks[task_id] = {"status": "error", "detail": result["error"]}
