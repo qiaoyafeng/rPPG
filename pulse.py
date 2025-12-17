@@ -53,7 +53,7 @@ class Pulse():
     def get_rfft_hr(self, signal):
         signal_size = len(signal)
         signal = signal.flatten()
-        fft_data = np.fft.rfft(signal) # FFT
+        fft_data = np.fft.rfft(signal)  # FFT
         fft_data = np.abs(fft_data)
 
         freq = np.fft.rfftfreq(signal_size, 1./self.framerate) # Frequency data
@@ -64,5 +64,5 @@ class Pulse():
         max_index = np.argmax(fft_data)
         fft_data[max_index] = fft_data[max_index]**2
         self.fft_spec.append(fft_data)
-        HR =  bps_freq[max_index]
-        return HR
+        hr = bps_freq[max_index]
+        return int(hr)
