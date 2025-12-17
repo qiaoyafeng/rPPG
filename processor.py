@@ -236,16 +236,16 @@ def calculate_hrv_health_index(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     health_index = int(max(1.0, min(99.0, health_index)))
 
     if health_index >= 75:
-        health_range = "优秀"
+        health_range = "good"
     elif health_index >= 25:
-        health_range = "中等"
+        health_range = "fair"
     else:
-        health_range = "低"
+        health_range = "poor"
     desc = f"说明：此为基于HRV等数据通过算法估算的相对参考值，一般而言，在同等条件下，数值越高反映身体恢复及适应能力越好。其绝对值受年龄、设备与算法影响显著，因此不同设备的读数不宜直接比较。"
     ranges = {
-        "低": [0, 24],
-        "中等": [25, 74],
-        "优秀": [75, 100]
+        "poor": [0, 24],
+        "fair": [25, 74],
+        "good": [75, 100]
     }
     return {"index": health_index, "range": health_range, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
 
@@ -313,18 +313,18 @@ def get_stress_level(hrv_metrics: Dict[str, float]) -> Dict[str, Any]:
     stress_score = int(max(1.0, min(99.0, stress_score)))
 
     if stress_score >= 75:
-        stress_range = "高"
+        stress_range = "high"
     elif stress_score >= 25:
-        stress_range = "中等"
+        stress_range = "medium"
     else:
-        stress_range = "低"
+        stress_range = "low"
 
     desc = f"说明：此为基于心率、HRV等数据通过算法估算的相对参考值，主要用于追踪自身压力的长期趋势，不同品牌设备的分数不具备直接可比性。"
 
     ranges = {
-        "低": [0, 24],
-        "中等": [25, 74],
-        "高": [75, 100]
+        "low": [0, 24],
+        "medium": [25, 74],
+        "high": [75, 100]
     }
 
     return {"score": stress_score, "range": stress_range, "desc": desc, "min": 0, "max": 100, "ranges": ranges}
