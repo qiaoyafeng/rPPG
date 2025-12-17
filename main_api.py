@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from typing import Dict, Any
 
+from config import settings
 from processor import HeartRateProcessor
 
 # --- Configuration ---
@@ -114,4 +115,4 @@ async def read_root(request: Request):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=32102)
+    uvicorn.run(app, host=settings.HOST, port=settings.PORT)
