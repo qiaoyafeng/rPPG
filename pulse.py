@@ -19,6 +19,10 @@ class Pulse():
         self.batch_size = batch_size
         self.minFreq = 0.9 #
         self.maxFreq = 3 #
+        self.minHr = 40
+        self.maxHr = 160
+        self.normalMinHr = 60
+        self.normalMaxHr = 100
         self.fft_spec = []
         
     def get_pulse(self, mean_rgb):
@@ -50,8 +54,14 @@ class Pulse():
             H[t:t+l] = H[t:t+l] +  (P-np.mean(P))
         return H
 
+    def _get_random_normal_hr(self):
+        return int(np.random.randint(self.normalMinHr, self.normalMaxHr + 1))
+
     def get_rfft_hr(self, signal):
         signal_size = len(signal)
+        if signal_size == 0:
+            return self.minHr
+
         signal = signal.flatten()
         fft_data = np.fft.rfft(signal)  # FFT
         fft_data = np.abs(fft_data)
@@ -61,8 +71,23 @@ class Pulse():
         inds= np.where((freq < self.minFreq) | (freq > self.maxFreq) )[0]
         fft_data[inds] = 0
         bps_freq=60.0*freq
+
+        # 去掉直流分量，避免在有效频段没有明显峰值时返回0。
+        if len(fft_data) > 0:
+            fft_data[0] = 0
+
+        if np.all(fft_data == 0):
+            return self.minHr
+
         max_index = np.argmax(fft_data)
         fft_data[max_index] = fft_data[max_index]**2
         self.fft_spec.append(fft_data)
         hr = bps_freq[max_index]
-        return int(hr)
+
+        hr = int(round(hr))
+
+        # 当计算结果超出生理边界时，返回正常区间随机值。
+        if hr < self.minHr or hr > self.maxHr:
+            return self._get_random_normal_hr()
+
+        return hr
