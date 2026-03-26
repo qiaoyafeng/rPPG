@@ -1,90 +1,148 @@
-# Robust Heart rate estimation from facial videos
+# 基于面部视频的鲁棒心率估计
 
-This repo monitors real time cardiac activities of a person through remote photoplethysmography(rPPG) without any physical contact with sensor, by detecing blood volume pulse induced subtle color changes from video stream through webcam sensor or a video file.
+本仓库通过远程光电容积脉搏波描记法(rPPG)实时监测人的心脏活动，无需与传感器进行任何物理接触，通过网络摄像头传感器或视频文件检测视频流中由血容量脉冲引起的微妙颜色变化。
 
-### Pre Processing 
-Skin pixels play significant role in extraction of rPPG signal therefore, we trained first ever deep learning model for semantic 
-segmentation of skin and non skin pixels. This is novel technique for region of interst (ROI) selection and tracking. The model is robust to motion, multiple postures and segments skin pixels from non skin very accurately.
-rPPG signal exhibit different waveform when sampled from different rigions of skin, therefore, to consistently sample ROI from same part of skin we detect face as prerequisite step to semantic segmentation.
+## 预处理
+皮肤像素在提取rPPG信号中起着重要作用，因此我们训练了第一个用于皮肤和非皮肤像素语义分割的深度学习模型。这是一种用于感兴趣区域(ROI)选择和跟踪的新颖技术。该模型对运动、多种姿势具有鲁棒性，并且能够非常准确地从非皮肤中分割出皮肤像素。rPPG信号在从皮肤的不同区域采样时表现出不同的波形，因此，为了从皮肤的同一部分一致地采样ROI，我们将人脸检测作为语义分割的先决步骤。
 
-### rPPG Signal Extraction 
-After detection and tracking ROI for signal extraction we compute the spatial red, green and blue channel mean of skin segmented pixels to minimise camera quantization error. Averaged values of RGB channel are temporally normalized and projected to plane orthogonal to skin-tone. The projected signal is alpha tuned to extract signal. 
+## rPPG信号提取
+在检测和跟踪用于信号提取的ROI后，我们计算皮肤分割像素的空间红、绿、蓝通道平均值，以最小化相机量化误差。RGB通道的平均值在时间上进行归一化，并投影到与肤色正交的平面上。对投影信号进行alpha调优以提取信号。
 
-### Post processing
+## 后处理
+我们应用信号处理技术，移动平均滤波器来去除信号中的异常值。为了估计心率，我们通过对rPPG信号应用快速傅里叶变换(FFT)来计算功率谱密度PSD。然后对其进行带通滤波，只分析感兴趣的频率。最大功率谱代表即时心率的频率。
 
-We apply signal processing techniques, moving average filter of order 6 to remove outliers from signal. To estimate heart rate we compute power spectral density PSD applying fast fourier transformation (FFT) on rPPG signal. It is then band pass filtered to analyse only frequencies of interest. The maximum power spectrum represents the frequency of instant heart rate. 
+此代码在启用cuda的设备上以30 FPS运行，并以一秒钟的间隔估计心跳。
 
-This code runs on cuda enabled device at 30 FPS and estimates heartbeat in one second intervel.
+## 新功能
 
+### 1. HRV(心率变异性)指标
+- **时域指标**：RMSSD、SDNN、pNN50
+- **频域指标**：LF、HF、LF/HF比率
+- **改进的峰值检测**，具有动态显著性参数，提高抗噪性
+- **使用基于中位数的滤波进行稳健的异常值去除**
 
-## Pipeline
+### 2. 健康评估
+- **HRV健康指数**：基于HRV指标的综合健康评估
+- **压力水平估计**：使用时域和频域HRV分析的组合评估压力水平
+- **呼吸率估计**：从脉搏信号计算呼吸率
+
+### 3. 其他生理参数
+- **SpO2估计**：使用RGB信号分析估计血氧饱和度
+- **血压估计**：提供收缩压和舒张压的简化估计
+
+### 4. 技术改进
+- **优化的帧处理**：可配置的帧子采样，提高处理速度
+- **稳健的频域分析**：增强的Welch方法，具有更好的参数调优
+- **改进的信号质量**：更好地处理短或噪声信号
+
+## 流程
 
 ![](images/pipeline.png)
 
-## Requirements
+## 要求
 
 * Python 3
 * Numpy
 * Pytorch
 * OpenCv
-* Matplotlib, Scipy, Pillow
-* Git Lfs to track trained model parameters or alternatively download the model from [google drive]( https://drive.google.com/open?id=1shRnrUAF5HyA_vwXJfCcrNVFkltT7U5E)
+* Matplotlib、Scipy、Pillow
+* Git Lfs用于跟踪训练模型参数，或者从[google drive]( https://drive.google.com/open?id=1shRnrUAF5HyA_vwXJfCcrNVFkltT7U5E)下载模型
 
-* We have used deep learning for semantic segmentation of skin and non skin pixels from frames. The segmentation requires cuda enabled device
+* 我们使用深度学习对帧中的皮肤和非皮肤像素进行语义分割。分割需要启用cuda的设备
 
+运行：
 
-Clone this repository.
-
-        git clone https://github.com/nasir6/rPPG.git
-
-To run
-
-        cd rPPG
         python3 run.py --source=0 --frame-rate=25
-
-
 
 ---
 
-## FastAPI API Usage
+## FastAPI API使用
 
-This project also includes a FastAPI server to get heart rate from an uploaded video file.
+该项目还包括一个FastAPI服务器，用于从上传的视频文件中获取心率和其他生理指标。
 
-### 1. Installation
+### 1. 安装
 
-First, install the required dependencies, including the new ones for the API:
+首先，安装所需的依赖项，包括API的新依赖项：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Running the API Server
+### 2. 运行API服务器
 
-To start the API server, run the following command:
+要启动API服务器，请运行以下命令：
 
 ```bash
 uvicorn main_api:app --reload
 ```
 
-The server will be available at `http://127.0.0.1:8000`.
+服务器将在`http://127.0.0.1:8000`上可用。
 
-### 3. Sending a Request
+### 3. 发送请求
 
-You can get a heart rate estimation by sending a `POST` request with a video file to the `/predict/` endpoint.
+您可以通过向`/predict/`端点发送带有视频文件的`POST`请求来获取生理指标。
 
-Here is an example using `curl`:
+以下是使用`curl`的示例：
 
 ```bash
 curl -X POST -F "file=@/path/to/your/video.mp4" http://127.0.0.1:8000/predict/
 ```
 
-Replace `/path/to/your/video.mp4` with the actual path to your video file.
+将`/path/to/your/video.mp4`替换为视频文件的实际路径。
 
-The API will return a JSON response with the calculated heart rate:
+### 4. API响应
+
+API将返回一个包含综合生理指标的JSON响应：
 
 ```json
 {
   "heart_rate": 75.5,
-  "units": "bpm"
+  "respiratory_rate": 16,
+  "spo2": 98,
+  "blood_pressure": {
+    "sbp": 120,
+    "dbp": 80
+  },
+  "hrv_metrics": {
+    "rmssd": 35.2,
+    "sdnn": 42.1,
+    "pnn50": 15.3,
+    "lf": 1200.5,
+    "hf": 800.3,
+    "lf_hf_ratio": 1.5
+  },
+  "hrv_health": {
+    "index": 85,
+    "range_en": "good",
+    "range_cn": "良好",
+    "desc": "说明：此为基于HRV等数据通过算法估算的相对参考值..."
+  },
+  "stress": {
+    "score": 30,
+    "range_en": "medium",
+    "range_cn": "中",
+    "desc": "说明：此为基于心率、HRV等数据通过算法估算的相对参考值..."
+  },
+  "units": {
+    "heart_rate": "bpm",
+    "respiratory_rate": "brpm",
+    "spo2": "%",
+    "blood_pressure": "mmHg",
+    "rmssd": "ms",
+    "sdnn": "ms",
+    "pnn50": "%",
+    "lf": "ms²",
+    "hf": "ms²",
+    "lf_hf_ratio": "-"
+  }
 }
 ```
+
+### 5. 性能优化
+
+该系统包含一个帧子采样配置，平衡了处理速度和信号质量：
+- **默认设置**：处理30fps视频的每第5帧
+- **可调整**：可以根据视频帧率和所需处理速度进行修改
+- **自适应**：自动调整低帧率视频的子采样率
+
+这种优化允许系统高效运行，同时保持准确的生理测量。
